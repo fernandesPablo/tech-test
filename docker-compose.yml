@@ -29,7 +29,7 @@ services:
     ports:
       - "5000:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:8080
       - ConnectionStrings__RedisConnection=redis:6379
       - RepositoryConfiguration__BaseDirectory=/app/ProductComparison.Application

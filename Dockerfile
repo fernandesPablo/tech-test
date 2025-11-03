@@ -12,6 +12,7 @@ COPY src/ProductComparison.Infrastructure/*.csproj ./src/ProductComparison.Infra
 COPY src/ProductComparison.Infrastructure.IoC/*.csproj ./src/ProductComparison.Infrastructure.IoC/
 COPY src/ProductComparison.CrossCutting/*.csproj ./src/ProductComparison.CrossCutting/
 COPY tests/ProductComparison.UnitTests/*.csproj ./tests/ProductComparison.UnitTests/
+COPY tests/ProductComparison.IntegrationTests/*.csproj ./tests/ProductComparison.IntegrationTests/
 
 # Restore dependencies
 RUN dotnet restore
