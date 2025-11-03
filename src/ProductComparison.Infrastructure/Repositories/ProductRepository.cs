@@ -19,38 +19,41 @@ public class ProductRepository : IProductRepository
     {
         _logger = logger;
 
-        _logger.LogWarning("=== PRODUCT REPOSITORY INIT ===");
-        _logger.LogWarning("CsvFilePath from config: '{Path}'", configuration.CsvFilePath ?? "NULL");
-        _logger.LogWarning("BaseDirectory: '{Dir}'", configuration.BaseDirectory);
-
         // Usa CsvPathResolver para centralizar a lógica de resolução de caminho
         _csvFilePath = CsvPathResolver.ResolvePath(configuration);
-        _logger.LogWarning("Resolved CSV path: {Path}", _csvFilePath);
-
-        _logger.LogWarning("=== FINAL REPOSITORY CSV PATH: {Path} ===", _csvFilePath);
+        _logger.LogInformation("[ProductRepository] Resolved CSV path: {Path}", _csvFilePath);
         EnsureFileExists();
     }
 
     private void EnsureFileExists()
     {
         var directory = Path.GetDirectoryName(_csvFilePath);
-        if (!Directory.Exists(directory))
-        {
-            Directory.CreateDirectory(directory!);
-            _logger.LogWarning("Created CSV directory: {Directory}", directory);
-        }
 
-        if (!File.Exists(_csvFilePath))
+        try
         {
-            _logger.LogWarning("CSV file does NOT exist, creating with header only: {Path}", _csvFilePath);
-            File.WriteAllText(_csvFilePath, _header + Environment.NewLine);
-            _logger.LogWarning("Created CSV file with header: {FilePath}", _csvFilePath);
+            // CreateDirectory é idempotente (não falha se já existe)
+            Directory.CreateDirectory(directory!);
+
+            // Usa FileMode.CreateNew para prevenir sobrescrita
+            if (!File.Exists(_csvFilePath))
+            {
+                try
+                {
+                    using var fs = new FileStream(_csvFilePath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                    using var writer = new StreamWriter(fs);
+                    writer.WriteLine(_header);
+                }
+                catch (IOException) when (File.Exists(_csvFilePath))
+                {
+                    // Arquivo foi criado por outra thread - OK!
+                    _logger.LogDebug("CSV file already created by another thread");
+                }
+            }
         }
-        else
+        catch (Exception ex)
         {
-            _logger.LogWarning("CSV file EXISTS: {Path}", _csvFilePath);
-            var lineCount = File.ReadAllLines(_csvFilePath).Length;
-            _logger.LogWarning("CSV has {LineCount} lines", lineCount);
+            _logger.LogError(ex, "Failed to ensure CSV file exists");
+            throw;
         }
     }
 
@@ -87,12 +90,12 @@ public class ProductRepository : IProductRepository
         catch (FileNotFoundException ex)
         {
             _logger.LogError(ex, "CSV file not found at {FilePath}", _csvFilePath);
-            throw new DataFileNotFoundException(Path.GetFileName(_csvFilePath), _csvFilePath);
+            throw new FileNotFoundException(Path.GetFileName(_csvFilePath), _csvFilePath);
         }
         catch (IOException ex)
         {
             _logger.LogError(ex, "IO error reading CSV file at {FilePath}", _csvFilePath);
-            throw new DataFileNotFoundException(Path.GetFileName(_csvFilePath), _csvFilePath);
+            throw new FileNotFoundException(Path.GetFileName(_csvFilePath), _csvFilePath);
         }
     }
 

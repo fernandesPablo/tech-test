@@ -14,17 +14,9 @@ public class CsvFileHealthCheck : IHealthCheck
     {
         _logger = logger;
 
-        _logger?.LogWarning("=== CSV HEALTH CHECK INIT ===");
-        _logger?.LogWarning("CsvFilePath from config: '{Path}'", configuration.CsvFilePath ?? "NULL");
-        _logger?.LogWarning("BaseDirectory: '{Dir}'", configuration.BaseDirectory);
-        _logger?.LogWarning("CsvFolder: '{Folder}'", configuration.CsvFolder);
-        _logger?.LogWarning("ProductsFileName: '{File}'", configuration.ProductsFileName);
-
         // Usa CsvPathResolver para centralizar a lógica de resolução de caminho
         _csvFilePath = CsvPathResolver.ResolvePath(configuration);
-        _logger?.LogWarning("Resolved CSV path: {Path}", _csvFilePath);
-
-        _logger?.LogWarning("=== FINAL CSV PATH: {Path} ===", _csvFilePath);
+        _logger?.LogInformation("[CsvFileHealthCheck] Resolved CSV path: {Path}", _csvFilePath);
     }
 
     public Task<HealthCheckResult> CheckHealthAsync(

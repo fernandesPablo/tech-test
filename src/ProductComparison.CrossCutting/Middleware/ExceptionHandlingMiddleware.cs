@@ -47,10 +47,10 @@ public class ExceptionHandlingMiddleware : IMiddleware
                 ex.Message,
                 "The resource was modified by another request. Please refresh and try again."),
 
-            DataFileNotFoundException ex => new ErrorResponse(
+            FileNotFoundException ex => new ErrorResponse(
                 500,
                 ex.Message,
-                _env.IsDevelopment() ? $"File: {ex.FileName}, Path: {ex.FilePath}" : null),
+                _env.IsDevelopment() ? $"File: {ex.FileName}, Path: {ex.StackTrace}" : null),
 
             DomainException ex => new ErrorResponse(
                 ex.StatusCode,

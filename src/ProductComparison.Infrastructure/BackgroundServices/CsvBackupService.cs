@@ -41,6 +41,10 @@ public class CsvBackupService : BackgroundService
     {
         _logger.LogInformation("CSV Backup Service started");
 
+        // Aguarda 30 segundos para evitar race condition com ProductRepository no startup
+        _logger.LogInformation("Waiting 30 seconds before first integrity check to allow repository initialization");
+        await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+
         // Check integrity on startup
         await CheckAndRecoverAsync();
 
@@ -106,15 +110,56 @@ public class CsvBackupService : BackgroundService
         try
         {
             var lines = await File.ReadAllLinesAsync(_csvFilePath);
-            if (lines.Length == 0 || !lines[0].Contains("Id,Name"))
+
+            // Validação 1: Arquivo vazio
+            if (lines.Length == 0)
             {
-                _logger.LogWarning("CSV file corrupted (invalid header), attempting recovery");
+                _logger.LogWarning("CSV file is empty, attempting recovery");
                 await RecoverFromBackupAsync();
+                return;
             }
+
+            // Validação 2: Header exato (deve ter exatamente 10 campos)
+            var expectedHeader = "Id,Name,Description,ImageUrl,Price,Rating,Brand,Color,Weight,Version";
+            if (lines[0] != expectedHeader)
+            {
+                _logger.LogWarning("CSV file has invalid header. Expected: '{Expected}', Found: '{Found}'",
+                    expectedHeader, lines[0]);
+                await RecoverFromBackupAsync();
+                return;
+            }
+
+            // Validação 3: Verifica se pelo menos 3 linhas de dados têm 10 campos
+            // (evita falso positivo se o arquivo estiver sendo escrito)
+            var dataLines = lines.Skip(1).Take(3).ToList();
+            if (dataLines.Any())
+            {
+                foreach (var line in dataLines)
+                {
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+
+                    var fields = line.Split(',');
+                    if (fields.Length != 10)
+                    {
+                        _logger.LogWarning("CSV file has data line with {FieldCount} fields instead of 10, attempting recovery",
+                            fields.Length);
+                        await RecoverFromBackupAsync();
+                        return;
+                    }
+                }
+            }
+
+            _logger.LogDebug("CSV file integrity check passed");
+        }
+        catch (IOException ex) when (ex.Message.Contains("being used by another process"))
+        {
+            // Arquivo está sendo usado - isso é NORMAL, não tenta recuperar
+            _logger.LogDebug("CSV file is being used by another process, skipping integrity check");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "CSV file corrupted, attempting recovery");
+            _logger.LogError(ex, "CSV file corrupted or unreadable, attempting recovery");
             await RecoverFromBackupAsync();
         }
     }
@@ -129,14 +174,41 @@ public class CsvBackupService : BackgroundService
             return;
         }
 
-        try
+        // Retry logic para evitar conflitos com ProductRepository
+        const int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            await Task.Run(() => File.Copy(latestBackup, _csvFilePath, overwrite: true));
-            _logger.LogInformation("Successfully recovered CSV from backup: {Backup}", Path.GetFileName(latestBackup));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to recover from backup");
+            try
+            {
+                // Aguarda um pouco antes de tentar (aumenta chance de ProductRepository liberar o arquivo)
+                if (attempt > 1)
+                {
+                    var delayMs = attempt * 500; // 500ms, 1000ms, 1500ms
+                    _logger.LogInformation("Retry {Attempt}/{MaxRetries} - waiting {Delay}ms before recovery attempt",
+                        attempt, maxRetries, delayMs);
+                    await Task.Delay(delayMs);
+                }
+
+                await Task.Run(() => File.Copy(latestBackup, _csvFilePath, overwrite: true));
+                _logger.LogInformation("Successfully recovered CSV from backup: {Backup}", Path.GetFileName(latestBackup));
+                return; // Sucesso, sai da função
+            }
+            catch (IOException ex) when (ex.Message.Contains("being used by another process") && attempt < maxRetries)
+            {
+                _logger.LogWarning("CSV file is locked (attempt {Attempt}/{MaxRetries}), will retry", attempt, maxRetries);
+                // Continua para próxima tentativa
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to recover from backup (attempt {Attempt}/{MaxRetries})", attempt, maxRetries);
+
+                if (attempt == maxRetries)
+                {
+                    _logger.LogError("All recovery attempts failed, giving up");
+                }
+
+                return; // Erro não recuperável, sai
+            }
         }
     }
 
