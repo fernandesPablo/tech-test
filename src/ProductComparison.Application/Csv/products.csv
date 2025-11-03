@@ -1,11 +1,21 @@
-Id,Name,Description,ImageUrl,Price,Rating,Brand,Color,Weight
-1,iPhone 13 Pro,Smartphone Apple com câmera profissional,https://example.com/iphone13.jpg,4999.99,4.8,Apple,Grafite,238
-2,Galaxy S21,Smartphone Samsung com tela 120Hz,https://example.com/s21.jpg,3799.99,4.6,Samsung,Preto,171
-3,Notebook Dell XPS,Notebook premium com Intel i7,https://example.com/xps.jpg,8499.99,4.9,Dell,Prata,1800
-4,PlayStation 5,Console de última geração,https://example.com/ps5.jpg,3999.99,4.7,Sony,Branco,4500
-5,AirPods Pro,Fones de ouvido com cancelamento de ruído,https://example.com/airpods.jpg,1299.99,4.5,Apple,Branco,54
-6,Smart TV LG OLED,TV 55" com tecnologia OLED,https://example.com/lgtv.jpg,5999.99,4.8,LG,Preto,21000
-7,Kindle Paperwhite,E-reader com tela antirreflexo,https://example.com/kindle.jpg,499.99,4.6,Amazon,Preto,205
-8,Xbox Series X,Console gaming 4K,https://example.com/xbox.jpg,4299.99,4.7,Microsoft,Preto,4800
-9,MacBook Air M1,Notebook com chip Apple M1,https://example.com/macbook.jpg,6999.99,4.9,Apple,Dourado,1290
-10,iPad Pro,Tablet profissional com M1,https://example.com/ipad.jpg,7499.99,4.8,Apple,Cinza Espacial,682
+Id,Name,Description,ImageUrl,Price,Rating,Brand,Color,Weight,Version
+1,Smartphone Galaxy X13,Premium smartphone with 6.5 inch AMOLED display and 128GB storage,https://example.com/images/galaxy-x12.jpg,899.99,4.5,Samsung,Midnight Black,185g,2
+2,Wireless Gaming Mouse,Ergonomic wireless mouse with RGB lighting and 16000 DPI sensor,https://example.com/images/gaming-mouse.jpg,79.99,4.7,Logitech,Black,95g,1
+3,Bluetooth Headphones Pro,Noise-cancelling over-ear headphones with 30-hour battery life,https://example.com/images/headphones-pro.jpg,249.99,4.8,Sony,Silver,250g,2
+4,4K Smart TV 55 inch,Ultra HD Smart TV with HDR support and built-in streaming apps,https://example.com/images/smart-tv-55.jpg,699.99,4.6,LG,Black,18.5kg,1
+5,Mechanical Keyboard RGB,Full-size mechanical keyboard with Cherry MX switches and RGB backlighting,https://example.com/images/mech-keyboard.jpg,149.99,4.4,Corsair,Black,1200g,1
+6,Fitness Tracker Band,Water-resistant fitness tracker with heart rate monitor and GPS,https://example.com/images/fitness-tracker.jpg,129.99,4.3,Fitbit,Blue,28g,3
+7,Portable SSD 1TB,High-speed external SSD with USB-C 3.2 Gen 2 interface,https://example.com/images/portable-ssd.jpg,159.99,4.9,Samsung,Gray,50g,1
+8,Wireless Charger Pad,Fast wireless charging pad compatible with Qi-enabled devices,https://example.com/images/wireless-charger.jpg,34.99,4.2,Anker,White,80g,2
+9,Laptop Backpack Pro,Water-resistant laptop backpack with multiple compartments and USB port,https://example.com/images/laptop-backpack.jpg,59.99,4.5,SwissGear,Black,850g,1
+10,USB-C Hub 7-in-1,Multi-port USB-C hub with HDMI 4K SD card reader and USB 3.0 ports,https://example.com/images/usb-hub.jpg,44.99,4.6,Anker,Space Gray,95g,1
+11,Gaming Console NextGen,Latest generation gaming console with 1TB storage and 4K gaming,https://example.com/images/gaming-console.jpg,499.99,4.8,Sony,White,4.5kg,2
+12,Smart Watch Series 7,Advanced smartwatch with health monitoring and cellular connectivity,https://example.com/images/smartwatch-7.jpg,399.99,4.7,Apple,Starlight,42g,1
+13,Webcam HD Pro,Full HD 1080p webcam with auto-focus and built-in microphone,https://example.com/images/webcam-hd.jpg,89.99,4.4,Logitech,Black,165g,1
+14,Tablet 10.5 inch,Lightweight tablet with stylus support and 64GB storage,https://example.com/images/tablet-10.jpg,329.99,4.5,Samsung,Silver,465g,1
+15,Bluetooth Speaker Portable,Waterproof portable speaker with 360-degree sound and 12-hour battery,https://example.com/images/bt-speaker.jpg,119.99,4.6,JBL,Red,540g,2
+16,Gaming Chair Ergonomic,Ergonomic gaming chair with lumbar support and adjustable armrests,https://example.com/images/gaming-chair.jpg,299.99,4.3,Secretlab,Black/Red,25kg,1
+17,Wireless Earbuds Pro,True wireless earbuds with active noise cancellation and wireless charging,https://example.com/images/earbuds-pro.jpg,179.99,4.7,Apple,White,11g,3
+18,Monitor 27 inch QHD,27-inch QHD monitor with 144Hz refresh rate and HDR support,https://example.com/images/monitor-27.jpg,449.99,4.8,Dell,Black,6.2kg,1
+19,Router WiFi 6 Mesh,Tri-band mesh WiFi 6 router with coverage up to 6000 sq ft,https://example.com/images/wifi-router.jpg,349.99,4.5,TP-Link,White,850g,1
+20,Action Camera 4K,Compact waterproof action camera with 4K video and image stabilization,https://example.com/images/action-cam.jpg,279.99,4.6,GoPro,Black,126g,2
