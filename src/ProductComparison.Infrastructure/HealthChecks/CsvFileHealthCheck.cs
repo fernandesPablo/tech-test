@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using ProductComparison.Infrastructure.Configuration;
+using ProductComparison.Infrastructure.Utilities;
 
 namespace ProductComparison.Infrastructure.HealthChecks;
 
@@ -19,19 +20,9 @@ public class CsvFileHealthCheck : IHealthCheck
         _logger?.LogWarning("CsvFolder: '{Folder}'", configuration.CsvFolder);
         _logger?.LogWarning("ProductsFileName: '{File}'", configuration.ProductsFileName);
 
-        // Usa CsvFilePath se especificado (testes), senão constrói o caminho
-        if (!string.IsNullOrWhiteSpace(configuration.CsvFilePath))
-        {
-            _csvFilePath = configuration.CsvFilePath;
-            _logger?.LogWarning("Using CsvFilePath from configuration: {Path}", _csvFilePath);
-        }
-        else
-        {
-            var baseDir = configuration.BaseDirectory?.TrimEnd('\\', '/') ?? string.Empty;
-            _csvFilePath = Path.Combine(baseDir, configuration.CsvFolder, configuration.ProductsFileName);
-            _csvFilePath = Path.GetFullPath(_csvFilePath);
-            _logger?.LogWarning("Constructed CSV path: {Path}", _csvFilePath);
-        }
+        // Usa CsvPathResolver para centralizar a lógica de resolução de caminho
+        _csvFilePath = CsvPathResolver.ResolvePath(configuration);
+        _logger?.LogWarning("Resolved CSV path: {Path}", _csvFilePath);
 
         _logger?.LogWarning("=== FINAL CSV PATH: {Path} ===", _csvFilePath);
     }

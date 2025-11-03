@@ -2,6 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ProductComparison.Infrastructure.Configuration;
+using ProductComparison.Infrastructure.Utilities;
 
 namespace ProductComparison.Infrastructure.BackgroundServices;
 
@@ -19,35 +20,18 @@ public class CsvBackupService : BackgroundService
         ILogger<CsvBackupService> logger)
     {
         _logger = logger;
-        
-        // Usa a mesma lógica do ProductRepository para construir o caminho
-        if (!string.IsNullOrWhiteSpace(repositoryConfig.CsvFilePath))
-        {
-            _csvFilePath = repositoryConfig.CsvFilePath;
-        }
-        else
-        {
-            var baseDir = repositoryConfig.BaseDirectory?.TrimEnd('\\', '/');
-            
-            // Se baseDir for "." ou vazio, usa o diretório onde está o executável
-            // e volta 3 níveis (de bin/Debug/net9.0 para a raiz do projeto)
-            if (string.IsNullOrWhiteSpace(baseDir) || baseDir == ".")
-            {
-                baseDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..");
-            }
-            
-            _csvFilePath = Path.Combine(baseDir, repositoryConfig.CsvFolder, repositoryConfig.ProductsFileName);
-            _csvFilePath = Path.GetFullPath(_csvFilePath);
-        }
-        
+
+        // Usa CsvPathResolver para centralizar a lógica de resolução de caminho
+        _csvFilePath = CsvPathResolver.ResolvePath(repositoryConfig);
+
         // Backup directory fica na mesma pasta do CSV
         var csvDirectory = Path.GetDirectoryName(_csvFilePath) ?? string.Empty;
         _backupDirectory = Path.Combine(csvDirectory, "Backups");
-        
+
         _backupInterval = TimeSpan.FromMinutes(options.Value.BackupIntervalMinutes);
         _maxBackups = options.Value.MaxBackups;
 
-        _logger.LogInformation("CSV Backup Service configured - CSV Path: {CsvPath}, Backup Directory: {BackupDir}", 
+        _logger.LogInformation("CSV Backup Service configured - CSV Path: {CsvPath}, Backup Directory: {BackupDir}",
             _csvFilePath, _backupDirectory);
 
         EnsureBackupDirectoryExists();

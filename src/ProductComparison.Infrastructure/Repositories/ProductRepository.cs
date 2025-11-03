@@ -2,6 +2,7 @@ using ProductComparison.Domain.Entities;
 using ProductComparison.Domain.Exceptions;
 using ProductComparison.Domain.Interfaces;
 using ProductComparison.Infrastructure.Configuration;
+using ProductComparison.Infrastructure.Utilities;
 using System.Globalization;
 using Microsoft.Extensions.Logging;
 using System.Text;
@@ -22,28 +23,9 @@ public class ProductRepository : IProductRepository
         _logger.LogWarning("CsvFilePath from config: '{Path}'", configuration.CsvFilePath ?? "NULL");
         _logger.LogWarning("BaseDirectory: '{Dir}'", configuration.BaseDirectory);
 
-        // Se CsvFilePath está definido, usa ele diretamente (para testes)
-        if (!string.IsNullOrWhiteSpace(configuration.CsvFilePath))
-        {
-            _csvFilePath = configuration.CsvFilePath;
-            _logger.LogWarning("Using CsvFilePath directly: {Path}", _csvFilePath);
-        }
-        else
-        {
-            // Caso contrário, constrói o caminho a partir das partes
-            var baseDir = configuration.BaseDirectory?.TrimEnd('\\', '/');
-
-            // Se baseDir for "." ou vazio, usa o diretório onde está o executável
-            // e volta 3 níveis (de bin/Debug/net9.0 para a raiz do projeto)
-            if (string.IsNullOrWhiteSpace(baseDir) || baseDir == ".")
-            {
-                baseDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..");
-            }
-
-            _csvFilePath = Path.Combine(baseDir, configuration.CsvFolder, configuration.ProductsFileName);
-            _csvFilePath = Path.GetFullPath(_csvFilePath);
-            _logger.LogWarning("Constructed CSV path: {Path}", _csvFilePath);
-        }
+        // Usa CsvPathResolver para centralizar a lógica de resolução de caminho
+        _csvFilePath = CsvPathResolver.ResolvePath(configuration);
+        _logger.LogWarning("Resolved CSV path: {Path}", _csvFilePath);
 
         _logger.LogWarning("=== FINAL REPOSITORY CSV PATH: {Path} ===", _csvFilePath);
         EnsureFileExists();
