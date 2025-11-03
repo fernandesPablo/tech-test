@@ -3,22 +3,20 @@ using ProductComparison.Infrastructure.IoC;
 using System.Reflection;
 using System.Threading.RateLimiting;
 using Serilog;
-using Serilog.Events;
 using StackExchange.Redis;
+using ProductComparison.Infrastructure.BackgroundServices;
 
-// Configure Serilog
+// Configure Serilog from appsettings.json
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true, reloadOnChange: true)
+    .Build();
+
 Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Information()
-    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-    .MinimumLevel.Override("System", LogEventLevel.Warning)
+    .ReadFrom.Configuration(configuration)
     .Enrich.FromLogContext()
     .Enrich.WithThreadId()
-    .WriteTo.Console(
-        outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
-    .WriteTo.File(
-        path: "logs/product-comparison-.log",
-        rollingInterval: RollingInterval.Day,
-        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{SourceContext}] {Message:lj} {Properties:j}{NewLine}{Exception}")
     .CreateLogger();
 
 try
@@ -29,6 +27,12 @@ try
 
     // Add Serilog
     builder.Host.UseSerilog();
+
+    // Configure CSV Backup Service
+    builder.Services.Configure<CsvBackupOptions>(
+        builder.Configuration.GetSection("CsvBackup"));
+
+    builder.Services.AddHostedService<CsvBackupService>();
 
     // Add services to the container.
     builder.Services.AddControllers()
@@ -50,7 +54,7 @@ try
         options.Configuration = builder.Configuration.GetConnectionString("RedisConnection");
 
         // Define um prefixo para as chaves
-        options.InstanceName = "ProdComparison:";
+        options.InstanceName = builder.Configuration["Redis:InstanceName"] ?? "ProdComparison:";
     });
 
     builder.Services.AddEndpointsApiExplorer();
@@ -85,9 +89,15 @@ try
     });
 
     // Configure Rate Limiting
+    var rateLimitConfig = builder.Configuration.GetSection("RateLimiting");
+    var permitLimit = rateLimitConfig.GetValue<int>("PermitLimit", 100);
+    var windowMinutes = rateLimitConfig.GetValue<int>("WindowMinutes", 1);
+    var queueLimit = rateLimitConfig.GetValue<int>("QueueLimit", 10);
+    var retryAfterSecondsDefault = rateLimitConfig.GetValue<int>("RetryAfterSeconds", 60);
+
     builder.Services.AddRateLimiter(options =>
     {
-        // Global rate limit: 100 requests per minute per IP
+        // Global rate limit: configured requests per configured window per IP
         options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         {
             var ipAddress = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -96,10 +106,10 @@ try
                 partitionKey: ipAddress,
                 factory: _ => new FixedWindowRateLimiterOptions
                 {
-                    PermitLimit = 100,
-                    Window = TimeSpan.FromMinutes(1),
+                    PermitLimit = permitLimit,
+                    Window = TimeSpan.FromMinutes(windowMinutes),
                     QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                    QueueLimit = 10
+                    QueueLimit = queueLimit
                 });
         });
 
@@ -108,7 +118,7 @@ try
         {
             context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
 
-            var retryAfterSeconds = 60;
+            var retryAfterSeconds = retryAfterSecondsDefault;
             if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
             {
                 retryAfterSeconds = (int)retryAfter.TotalSeconds;
@@ -183,6 +193,12 @@ try
     });
 
     app.MapHealthChecks("/health/live");
+
+    // Log application URLs before starting
+    var urls = app.Urls.Any() ? app.Urls : new[] { "http://localhost:5000" };
+    Log.Information("🚀 Application starting on: {Urls}", string.Join(", ", urls));
+    Log.Information("📖 Swagger UI available at: {SwaggerUrl}/swagger", urls.First());
+    Log.Information("❤️ Health check available at: {HealthUrl}/health", urls.First());
 
     app.Run();
 }

@@ -15,27 +15,24 @@ public static class NativeInjector
     public static void RegisterServices(IServiceCollection services, IConfiguration configuration)
     {
         // Configure Repository
-        var repositoryConfig = configuration
-            .GetSection(nameof(RepositoryConfiguration))
-            .Get<RepositoryConfiguration>();
+        var repositoryConfig = new RepositoryConfiguration();
+        configuration.GetSection(nameof(RepositoryConfiguration)).Bind(repositoryConfig);
 
-        if (repositoryConfig != null)
+        // Se CsvFilePath não foi configurado, usa valores default
+        if (string.IsNullOrWhiteSpace(repositoryConfig.CsvFilePath))
         {
-            // Se o caminho for relativo, resolve em relação à pasta do projeto
-            if (!Path.IsPathRooted(repositoryConfig.BaseDirectory))
+            if (string.IsNullOrWhiteSpace(repositoryConfig.BaseDirectory))
             {
-                var projectPath = Directory.GetCurrentDirectory();
-                repositoryConfig.BaseDirectory = Path.GetFullPath(Path.Combine(projectPath, "..", repositoryConfig.BaseDirectory));
+                repositoryConfig.BaseDirectory = "";
             }
-        }
-        else
-        {
-            repositoryConfig = new RepositoryConfiguration
+            if (string.IsNullOrWhiteSpace(repositoryConfig.CsvFolder))
             {
-                BaseDirectory = ".",
-                CsvFolder = "Csv",
-                ProductsFileName = "products.csv"
-            };
+                repositoryConfig.CsvFolder = "Csv";
+            }
+            if (string.IsNullOrWhiteSpace(repositoryConfig.ProductsFileName))
+            {
+                repositoryConfig.ProductsFileName = "products.csv";
+            }
         }
 
         // Register configurations

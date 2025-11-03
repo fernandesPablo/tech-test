@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 using ProductComparison.Infrastructure.Configuration;
 
 namespace ProductComparison.Infrastructure.HealthChecks;
@@ -6,20 +7,33 @@ namespace ProductComparison.Infrastructure.HealthChecks;
 public class CsvFileHealthCheck : IHealthCheck
 {
     private readonly string _csvFilePath;
+    private readonly ILogger<CsvFileHealthCheck>? _logger;
 
-    public CsvFileHealthCheck(RepositoryConfiguration configuration)
+    public CsvFileHealthCheck(RepositoryConfiguration configuration, ILogger<CsvFileHealthCheck>? logger = null)
     {
+        _logger = logger;
+
+        _logger?.LogWarning("=== CSV HEALTH CHECK INIT ===");
+        _logger?.LogWarning("CsvFilePath from config: '{Path}'", configuration.CsvFilePath ?? "NULL");
+        _logger?.LogWarning("BaseDirectory: '{Dir}'", configuration.BaseDirectory);
+        _logger?.LogWarning("CsvFolder: '{Folder}'", configuration.CsvFolder);
+        _logger?.LogWarning("ProductsFileName: '{File}'", configuration.ProductsFileName);
+
         // Usa CsvFilePath se especificado (testes), senão constrói o caminho
         if (!string.IsNullOrWhiteSpace(configuration.CsvFilePath))
         {
             _csvFilePath = configuration.CsvFilePath;
+            _logger?.LogWarning("Using CsvFilePath from configuration: {Path}", _csvFilePath);
         }
         else
         {
             var baseDir = configuration.BaseDirectory?.TrimEnd('\\', '/') ?? string.Empty;
             _csvFilePath = Path.Combine(baseDir, configuration.CsvFolder, configuration.ProductsFileName);
             _csvFilePath = Path.GetFullPath(_csvFilePath);
+            _logger?.LogWarning("Constructed CSV path: {Path}", _csvFilePath);
         }
+
+        _logger?.LogWarning("=== FINAL CSV PATH: {Path} ===", _csvFilePath);
     }
 
     public Task<HealthCheckResult> CheckHealthAsync(
@@ -38,7 +52,7 @@ public class CsvFileHealthCheck : IHealthCheck
 
             // Check if file is readable
             using var stream = File.OpenRead(_csvFilePath);
-            
+
             // Check if file has content (at least header)
             var fileInfo = new FileInfo(_csvFilePath);
             if (fileInfo.Length == 0)

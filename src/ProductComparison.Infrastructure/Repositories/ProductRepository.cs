@@ -17,20 +17,35 @@ public class ProductRepository : IProductRepository
     public ProductRepository(RepositoryConfiguration configuration, ILogger<ProductRepository> logger)
     {
         _logger = logger;
-        
+
+        _logger.LogWarning("=== PRODUCT REPOSITORY INIT ===");
+        _logger.LogWarning("CsvFilePath from config: '{Path}'", configuration.CsvFilePath ?? "NULL");
+        _logger.LogWarning("BaseDirectory: '{Dir}'", configuration.BaseDirectory);
+
         // Se CsvFilePath está definido, usa ele diretamente (para testes)
         if (!string.IsNullOrWhiteSpace(configuration.CsvFilePath))
         {
             _csvFilePath = configuration.CsvFilePath;
+            _logger.LogWarning("Using CsvFilePath directly: {Path}", _csvFilePath);
         }
         else
         {
             // Caso contrário, constrói o caminho a partir das partes
-            var baseDir = configuration.BaseDirectory?.TrimEnd('\\', '/') ?? string.Empty;
+            var baseDir = configuration.BaseDirectory?.TrimEnd('\\', '/');
+
+            // Se baseDir for "." ou vazio, usa o diretório onde está o executável
+            // e volta 3 níveis (de bin/Debug/net9.0 para a raiz do projeto)
+            if (string.IsNullOrWhiteSpace(baseDir) || baseDir == ".")
+            {
+                baseDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..");
+            }
+
             _csvFilePath = Path.Combine(baseDir, configuration.CsvFolder, configuration.ProductsFileName);
             _csvFilePath = Path.GetFullPath(_csvFilePath);
+            _logger.LogWarning("Constructed CSV path: {Path}", _csvFilePath);
         }
-        
+
+        _logger.LogWarning("=== FINAL REPOSITORY CSV PATH: {Path} ===", _csvFilePath);
         EnsureFileExists();
     }
 
@@ -40,13 +55,20 @@ public class ProductRepository : IProductRepository
         if (!Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory!);
-            _logger.LogInformation("Created CSV directory: {Directory}", directory);
+            _logger.LogWarning("Created CSV directory: {Directory}", directory);
         }
 
         if (!File.Exists(_csvFilePath))
         {
+            _logger.LogWarning("CSV file does NOT exist, creating with header only: {Path}", _csvFilePath);
             File.WriteAllText(_csvFilePath, _header + Environment.NewLine);
-            _logger.LogInformation("Created CSV file: {FilePath}", _csvFilePath);
+            _logger.LogWarning("Created CSV file with header: {FilePath}", _csvFilePath);
+        }
+        else
+        {
+            _logger.LogWarning("CSV file EXISTS: {Path}", _csvFilePath);
+            var lineCount = File.ReadAllLines(_csvFilePath).Length;
+            _logger.LogWarning("CSV has {LineCount} lines", lineCount);
         }
     }
 
@@ -366,6 +388,8 @@ public class ProductRepository : IProductRepository
         if (values.Length != 10)
         {
             _logger.LogWarning("CSV line has invalid format: expected 10 fields, got {FieldCount}", values.Length);
+            _logger.LogWarning("Line content: {Line}", line);
+            _logger.LogWarning("Parsed fields: [{Fields}]", string.Join("] [", values));
             return null;
         }
 
