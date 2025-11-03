@@ -1,0 +1,27 @@
+### Test Rate Limiting - Execute this 101 times to see 429 response
+
+# First 100 requests should succeed (200 OK)
+GET http://localhost:5000/api/v1/products
+Accept: application/json
+
+###
+
+# After 100 requests in 1 minute, you should get 429 Too Many Requests
+GET http://localhost:5000/api/v1/products
+Accept: application/json
+
+###
+
+# Bulk test (run manually to test limit)
+# Copy and paste this block 101 times to trigger rate limit
+GET http://localhost:5000/api/v1/products?page=1&pageSize=10
+Accept: application/json
+
+###
+
+# Expected 429 Response:
+# {
+#   "statusCode": 429,
+#   "message": "Too many requests. Please try again later.",
+#   "retryAfterSeconds": 60
+# }

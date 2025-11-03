@@ -1,0 +1,42 @@
+# Production docker-compose with external Redis
+# Use this for production-like environments with external Redis service
+
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: productcomparison-api-prod
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__RedisConnection=${REDIS_CONNECTION:-localhost:6379}
+      - RepositoryConfiguration__BaseDirectory=/app/ProductComparison.Application
+      - RepositoryConfiguration__CsvFolder=Csv
+      - RepositoryConfiguration__ProductsFileName=products.csv
+    volumes:
+      - ./src/ProductComparison.Application/Csv:/app/ProductComparison.Application/Csv:rw
+      - api-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+volumes:
+  api-logs:
+    driver: local

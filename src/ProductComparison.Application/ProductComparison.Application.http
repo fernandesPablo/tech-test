@@ -1,0 +1,51 @@
+@ProductComparison.Application_HostAddress = http://localhost:5011
+
+### Create new product
+POST {{ProductComparison.Application_HostAddress}}/api/v1/products
+Content-Type: application/json
+
+{
+    "name": "New Product",
+    "description": "Detailed product description",
+    "imageUrl": "https://example.com/product-image.jpg",
+    "price": 149.99,
+    "rating": 4.8,
+    "specifications": {
+        "brand": "Example Brand",
+        "color": "Red",
+        "weight": "1.2kg"
+    }
+}
+
+### Get all products
+GET {{ProductComparison.Application_HostAddress}}/api/v1/products
+Accept: application/json
+
+### Get product by ID
+GET {{ProductComparison.Application_HostAddress}}/api/v1/products/1
+Accept: application/json
+
+### Compare multiple products
+GET {{ProductComparison.Application_HostAddress}}/api/v1/products/compare?ids=1,2,3
+Accept: application/json
+
+### Update product
+PUT {{ProductComparison.Application_HostAddress}}/api/v1/products/1
+Content-Type: application/json
+
+{
+    "name": "Updated Product Name",
+    "description": "Updated product description",
+    "imageUrl": "https://example.com/updated-image.jpg",
+    "price": 99.99,
+    "rating": 4.5,
+    "specifications": {
+        "brand": "Example Brand",
+        "color": "Blue",
+        "weight": "1.5kg"
+    }
+}
+
+### Delete product
+DELETE {{ProductComparison.Application_HostAddress}}/api/v1/products/1
+Accept: application/json

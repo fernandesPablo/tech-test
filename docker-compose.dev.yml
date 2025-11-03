@@ -1,0 +1,50 @@
+# Development docker-compose with hot reload
+# Use this for local development with volume mapping for code changes
+
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: productcomparison-redis-dev
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-dev-data:/data
+    networks:
+      - productcomparison-dev
+
+  api:
+    image: mcr.microsoft.com/dotnet/sdk:9.0
+    container_name: productcomparison-api-dev
+    working_dir: /src/src/ProductComparison.Application
+    ports:
+      - "5000:5000"
+      - "5001:5001"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5000;https://+:5001
+      - ConnectionStrings__RedisConnection=redis:6379
+      - RepositoryConfiguration__BaseDirectory=.
+      - RepositoryConfiguration__CsvFolder=Csv
+      - RepositoryConfiguration__ProductsFileName=products.csv
+    volumes:
+      # Mount entire source code for hot reload
+      - ./:/src
+      # Don't mount bin/obj folders
+      - /src/src/ProductComparison.Application/bin
+      - /src/src/ProductComparison.Application/obj
+    command: dotnet watch run --project /src/src/ProductComparison.Application/ProductComparison.Application.csproj
+    depends_on:
+      - redis
+    networks:
+      - productcomparison-dev
+
+networks:
+  productcomparison-dev:
+    driver: bridge
+
+volumes:
+  redis-dev-data:
+    driver: local

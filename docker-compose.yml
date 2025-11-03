@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # Redis Cache Service
+  redis:
+    image: redis:7-alpine
+    container_name: productcomparison-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - productcomparison-network
+
+  # Product Comparison API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: productcomparison-api
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__RedisConnection=redis:6379
+      - RepositoryConfiguration__BaseDirectory=/app/ProductComparison.Application
+      - RepositoryConfiguration__CsvFolder=Csv
+      - RepositoryConfiguration__ProductsFileName=products.csv
+    volumes:
+      # Mount CSV file as volume (persistent data)
+      - ./src/ProductComparison.Application/Csv:/app/ProductComparison.Application/Csv
+      # Mount logs directory
+      - ./logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - productcomparison-network
+
+networks:
+  productcomparison-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local
