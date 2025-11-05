@@ -25,7 +25,7 @@ public class RedisCacheService : ICacheService
     };
 
     public RedisCacheService(
-        IDistributedCache distributedCache, 
+        IDistributedCache distributedCache,
         ILogger<RedisCacheService> logger,
         IOptions<RedisCacheOptions>? redisOptions = null,
         IConnectionMultiplexer? redisConnection = null)

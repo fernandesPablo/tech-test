@@ -45,7 +45,6 @@ public class ProductRepository : IProductRepository
                 }
                 catch (IOException) when (File.Exists(_csvFilePath))
                 {
-                    // Arquivo foi criado por outra thread - OK!
                     _logger.LogDebug("CSV file already created by another thread");
                 }
             }

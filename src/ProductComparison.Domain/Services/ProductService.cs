@@ -43,7 +43,6 @@ public class ProductService : IProductService
         {
             _logger.LogInformation("Retrieving products page {Page} with size {PageSize}", page, pageSize);
 
-            // Try to get from cache
             var cachedResult = await _cache.GetAsync<PagedResult<ProductResponseDto>>(cacheKey);
             if (cachedResult != null)
             {
@@ -51,12 +50,10 @@ public class ProductService : IProductService
                 return cachedResult;
             }
 
-            // Get all products from repository
             var allProducts = await _repository.GetAllAsync();
             var productList = allProducts.ToList();
             var totalCount = productList.Count;
 
-            // Apply pagination
             var pagedProducts = productList
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
