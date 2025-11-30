@@ -24,6 +24,56 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
+    /// Gets the correlation ID from the current activity or HTTP context.
+    /// </summary>
+    private string GetCorrelationId() => Activity.Current?.Id ?? HttpContext.TraceIdentifier;
+
+    /// <summary>
+    /// Executes an action within a logging scope with correlation tracking.
+    /// </summary>
+    private async Task<T> ExecuteWithLoggingAsync<T>(
+        string endpoint,
+        string action,
+        Func<string, Task<T>> operation,
+        Dictionary<string, object>? additionalScope = null)
+    {
+        var correlationId = GetCorrelationId();
+        var scope = new Dictionary<string, object>
+        {
+            ["CorrelationId"] = correlationId,
+            ["Endpoint"] = endpoint,
+            ["Action"] = action,
+            ["Timestamp"] = DateTime.UtcNow
+        };
+
+        if (additionalScope != null)
+        {
+            foreach (var kvp in additionalScope)
+            {
+                scope[kvp.Key] = kvp.Value;
+            }
+        }
+
+        using (_logger.BeginScope(scope))
+        {
+            return await operation(correlationId);
+        }
+    }
+
+    /// <summary>
+    /// Validates the model state and returns BadRequest if invalid.
+    /// </summary>
+    private ActionResult<T>? ValidateModelState<T>(string correlationId)
+    {
+        if (!ModelState.IsValid)
+        {
+            _logger.LogWarning("Request failed due to validation errors. CorrelationId: {CorrelationId}", correlationId);
+            return BadRequest(ModelState);
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Retrieves all products from the catalog with pagination
     /// </summary>
     /// <param name="page">Page number (default: 1, min: 1)</param>
@@ -40,38 +90,36 @@ public class ProductsController : ControllerBase
         [FromQuery][Range(1, int.MaxValue, ErrorMessage = "Page must be greater than 0")] int page = 1,
         [FromQuery][Range(1, 100, ErrorMessage = "Page size must be between 1 and 100")] int pageSize = 10)
     {
-        var correlationId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
-
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["CorrelationId"] = correlationId,
-            ["Endpoint"] = "GET /api/v1/products",
-            ["Action"] = nameof(GetAll),
-            ["Page"] = page,
-            ["PageSize"] = pageSize,
-            ["Timestamp"] = DateTime.UtcNow
-        }))
-        {
-            _logger.LogInformation("Received request to get products page {Page} with size {PageSize}. CorrelationId: {CorrelationId}", page, pageSize, correlationId);
-
-            var response = await _productService.GetAllAsync(page, pageSize);
-
-            _logger.LogInformation("Returning page {Page} with {ItemCount} of {TotalCount} products. CorrelationId: {CorrelationId}", page, response.Items.Count(), response.TotalCount, correlationId);
-
-            return Ok(new
+        return await ExecuteWithLoggingAsync(
+            "GET /api/v1/products",
+            nameof(GetAll),
+            async correlationId =>
             {
-                data = response.Items,
-                pagination = new
+                _logger.LogInformation("Received request to get products page {Page} with size {PageSize}. CorrelationId: {CorrelationId}", page, pageSize, correlationId);
+
+                var response = await _productService.GetAllAsync(page, pageSize);
+
+                _logger.LogInformation("Returning page {Page} with {ItemCount} of {TotalCount} products. CorrelationId: {CorrelationId}", page, response.Items.Count(), response.TotalCount, correlationId);
+
+                return Ok(new
                 {
-                    page = response.Page,
-                    pageSize = response.PageSize,
-                    totalCount = response.TotalCount,
-                    totalPages = response.TotalPages,
-                    hasPreviousPage = response.HasPreviousPage,
-                    hasNextPage = response.HasNextPage
-                }
+                    data = response.Items,
+                    pagination = new
+                    {
+                        page = response.Page,
+                        pageSize = response.PageSize,
+                        totalCount = response.TotalCount,
+                        totalPages = response.TotalPages,
+                        hasPreviousPage = response.HasPreviousPage,
+                        hasNextPage = response.HasNextPage
+                    }
+                });
+            },
+            new Dictionary<string, object>
+            {
+                ["Page"] = page,
+                ["PageSize"] = pageSize
             });
-        }
     }
 
     /// <summary>
@@ -88,25 +136,23 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<ProductResponseDto>> GetById([Range(1, int.MaxValue, ErrorMessage = "Id must be greater than 0")] int id)
     {
-        var correlationId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
+        return await ExecuteWithLoggingAsync(
+            $"GET /api/v1/products/{id}",
+            nameof(GetById),
+            async correlationId =>
+            {
+                _logger.LogInformation("Received request to get product by ID: {ProductId}. CorrelationId: {CorrelationId}", id, correlationId);
 
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["CorrelationId"] = correlationId,
-            ["Endpoint"] = $"GET /api/v1/products/{id}",
-            ["Action"] = nameof(GetById),
-            ["ProductId"] = id,
-            ["Timestamp"] = DateTime.UtcNow
-        }))
-        {
-            _logger.LogInformation("Received request to get product by ID: {ProductId}. CorrelationId: {CorrelationId}", id, correlationId);
+                var response = await _productService.GetByIdAsync(id);
 
-            var response = await _productService.GetByIdAsync(id);
+                _logger.LogInformation("Successfully retrieved product {ProductId}. CorrelationId: {CorrelationId}", id, correlationId);
 
-            _logger.LogInformation("Successfully retrieved product {ProductId}. CorrelationId: {CorrelationId}", id, correlationId);
-
-            return Ok(response);
-        }
+                return Ok(response);
+            },
+            new Dictionary<string, object>
+            {
+                ["ProductId"] = id
+            });
     }
 
     /// <summary>
@@ -128,26 +174,23 @@ public class ProductsController : ControllerBase
         [RegularExpression(@"^\d+(,\d+)*$", ErrorMessage = "Product IDs must be comma-separated numbers")]
         string ids)
     {
-        var correlationId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
+        return await ExecuteWithLoggingAsync(
+            "GET /api/v1/products/compare",
+            nameof(Compare),
+            async correlationId =>
+            {
+                _logger.LogInformation("Received request to compare products with IDs: {ProductIds}. CorrelationId: {CorrelationId}", ids, correlationId);
 
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["CorrelationId"] = correlationId,
-            ["Endpoint"] = "GET /api/v1/products/compare",
-            ["Action"] = nameof(Compare),
-            ["RequestedIds"] = ids,
-            ["Timestamp"] = DateTime.UtcNow
-        }))
-        {
-            _logger.LogInformation("Received request to compare products with IDs: {ProductIds}. CorrelationId: {CorrelationId}", ids, correlationId);
+                var response = await _productService.CompareAsync(ids);
 
-            var response = await _productService.CompareAsync(ids);
+                _logger.LogInformation("Successfully completed comparison for {ProductCount} products. CorrelationId: {CorrelationId}", response.Products.Count, correlationId);
 
-            _logger.LogInformation("Successfully completed comparison for {ProductCount} products. CorrelationId: {CorrelationId}",
-                response.Products.Count, correlationId);
-
-            return Ok(response);
-        }
+                return Ok(response);
+            },
+            new Dictionary<string, object>
+            {
+                ["RequestedIds"] = ids
+            });
     }
 
     /// <summary>
@@ -162,37 +205,33 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<ProductResponseDto>> Create([FromBody] CreateProductDto request)
     {
-        var correlationId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
-
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["CorrelationId"] = correlationId,
-            ["Endpoint"] = "POST /api/v1/products",
-            ["Action"] = nameof(Create),
-            ["ProductName"] = request.Name,
-            ["Price"] = request.Price,
-            ["Timestamp"] = DateTime.UtcNow
-        }))
-        {
-            _logger.LogInformation("Received request to create product: {ProductName} with price {Price}. CorrelationId: {CorrelationId}",
-                request.Name, request.Price, correlationId);
-
-            if (!ModelState.IsValid)
+        return await ExecuteWithLoggingAsync(
+            "POST /api/v1/products",
+            nameof(Create),
+            async correlationId =>
             {
-                _logger.LogWarning("Product creation failed due to validation errors. CorrelationId: {CorrelationId}", correlationId);
-                return BadRequest(ModelState);
-            }
+                _logger.LogInformation("Received request to create product: {ProductName} with price {Price}. CorrelationId: {CorrelationId}",
+                    request.Name, request.Price, correlationId);
 
-            var response = await _productService.CreateAsync(request);
+                var validationResult = ValidateModelState<ProductResponseDto>(correlationId);
+                if (validationResult != null)
+                    return validationResult;
 
-            _logger.LogInformation("Product created successfully with ID {ProductId}. CorrelationId: {CorrelationId}",
-                response.Id, correlationId);
+                var response = await _productService.CreateAsync(request);
 
-            return CreatedAtAction(
-                nameof(GetById),
-                new { id = response.Id },
-                response);
-        }
+                _logger.LogInformation("Product created successfully with ID {ProductId}. CorrelationId: {CorrelationId}",
+                    response.Id, correlationId);
+
+                return CreatedAtAction(
+                    nameof(GetById),
+                    new { id = response.Id },
+                    response);
+            },
+            new Dictionary<string, object>
+            {
+                ["ProductName"] = request.Name,
+                ["Price"] = request.Price
+            });
     }
 
     /// <summary>
@@ -212,36 +251,31 @@ public class ProductsController : ControllerBase
         [Range(1, int.MaxValue, ErrorMessage = "Id must be greater than 0")] int id,
         [FromBody] UpdateProductDto request)
     {
-        var correlationId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
-
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["CorrelationId"] = correlationId,
-            ["Endpoint"] = $"PUT /api/v1/products/{id}",
-            ["Action"] = nameof(Update),
-            ["ProductId"] = id,
-            ["ProductName"] = request.Name,
-            ["Price"] = request.Price,
-            ["Timestamp"] = DateTime.UtcNow
-        }))
-        {
-            _logger.LogInformation("Received request to update product ID {ProductId}: {ProductName}. CorrelationId: {CorrelationId}",
-                id, request.Name, correlationId);
-
-            if (!ModelState.IsValid)
+        return await ExecuteWithLoggingAsync(
+            $"PUT /api/v1/products/{id}",
+            nameof(Update),
+            async correlationId =>
             {
-                _logger.LogWarning("Product update failed due to validation errors for ID {ProductId}. CorrelationId: {CorrelationId}",
+                _logger.LogInformation("Received request to update product ID {ProductId}: {ProductName}. CorrelationId: {CorrelationId}",
+                    id, request.Name, correlationId);
+
+                var validationResult = ValidateModelState<ProductResponseDto>(correlationId);
+                if (validationResult != null)
+                    return validationResult;
+
+                var response = await _productService.UpdateAsync(id, request);
+
+                _logger.LogInformation("Product {ProductId} updated successfully. CorrelationId: {CorrelationId}",
                     id, correlationId);
-                return BadRequest(ModelState);
-            }
 
-            var response = await _productService.UpdateAsync(id, request);
-
-            _logger.LogInformation("Product {ProductId} updated successfully. CorrelationId: {CorrelationId}",
-                id, correlationId);
-
-            return Ok(response);
-        }
+                return Ok(response);
+            },
+            new Dictionary<string, object>
+            {
+                ["ProductId"] = id,
+                ["ProductName"] = request.Name,
+                ["Price"] = request.Price
+            });
     }
 
     /// <summary>
@@ -258,25 +292,24 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult> Delete([Range(1, int.MaxValue, ErrorMessage = "Id must be greater than 0")] int id)
     {
-        var correlationId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
+        return await ExecuteWithLoggingAsync(
+            $"DELETE /api/v1/products/{id}",
+            nameof(Delete),
+            async correlationId =>
+            {
+                _logger.LogInformation("Received request to delete product ID {ProductId}. CorrelationId: {CorrelationId}",
+                    id, correlationId);
 
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["CorrelationId"] = correlationId,
-            ["Endpoint"] = $"DELETE /api/v1/products/{id}",
-            ["ProductId"] = id,
-            ["Timestamp"] = DateTime.UtcNow
-        }))
-        {
-            _logger.LogInformation("Received request to delete product ID {ProductId}. CorrelationId: {CorrelationId}",
-                id, correlationId);
+                await _productService.DeleteAsync(id);
 
-            await _productService.DeleteAsync(id);
+                _logger.LogInformation("Product {ProductId} deleted successfully. CorrelationId: {CorrelationId}",
+                    id, correlationId);
 
-            _logger.LogInformation("Product {ProductId} deleted successfully. CorrelationId: {CorrelationId}",
-                id, correlationId);
-
-            return NoContent();
-        }
+                return NoContent();
+            },
+            new Dictionary<string, object>
+            {
+                ["ProductId"] = id
+            });
     }
 }

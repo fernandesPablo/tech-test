@@ -33,102 +33,89 @@ public class ProductService : IProductService
 
         var cacheKey = $"products:list:page:{page}:size:{pageSize}";
 
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["Operation"] = "GetAllProducts",
-            ["Page"] = page,
-            ["PageSize"] = pageSize,
-            ["CacheKey"] = cacheKey
-        }))
+        return await ExecuteWithOperationScopeAsync("GetAllProducts", async () =>
         {
             _logger.LogInformation("Retrieving products page {Page} with size {PageSize}", page, pageSize);
 
-            var cachedResult = await _cache.GetAsync<PagedResult<ProductResponseDto>>(cacheKey);
-            if (cachedResult != null)
-            {
-                _logger.LogInformation("Products page {Page} retrieved from cache (Cache Hit)", page);
-                return cachedResult;
-            }
+            var result = await ExecuteWithCacheAsync(
+                cacheKey,
+                TimeSpan.FromMinutes(15),
+                async () =>
+                {
+                    var allProducts = await _repository.GetAllAsync();
+                    var productList = allProducts.ToList();
+                    var totalCount = productList.Count;
 
-            var allProducts = await _repository.GetAllAsync();
-            var productList = allProducts.ToList();
-            var totalCount = productList.Count;
+                    var pagedProducts = productList
+                        .Skip((page - 1) * pageSize)
+                        .Take(pageSize)
+                        .Select(ToResponse)
+                        .ToList();
 
-            var pagedProducts = productList
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .Select(ToResponse)
-                .ToList();
+                    var pagedResult = new PagedResult<ProductResponseDto>(
+                        pagedProducts,
+                        totalCount,
+                        page,
+                        pageSize
+                    );
 
-            var result = new PagedResult<ProductResponseDto>(
-                pagedProducts,
-                totalCount,
-                page,
-                pageSize
-            );
+                    _logger.LogInformation(
+                        "Successfully retrieved page {Page} with {ItemCount} of {TotalCount} products",
+                        page, pagedProducts.Count, totalCount);
 
-            _logger.LogInformation(
-                "Successfully retrieved page {Page} with {ItemCount} of {TotalCount} products",
-                page, pagedProducts.Count, totalCount);
-
-            // Cache the result with TTL
-            var ttl = TimeSpan.FromMinutes(15);
-            await _cache.SetAsync(cacheKey, result, ttl);
+                    return pagedResult;
+                },
+                $"Products page {page} retrieved from cache");
 
             return result;
-        }
+        }, new Dictionary<string, object>
+        {
+            ["Page"] = page,
+            ["PageSize"] = pageSize,
+            ["CacheKey"] = cacheKey
+        });
     }
 
     public async Task<ProductResponseDto> GetByIdAsync(int id)
     {
         var cacheKey = $"products:details:{id}";
 
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["Operation"] = "GetProductById",
-            ["ProductId"] = id,
-            ["CacheKey"] = cacheKey
-        }))
+        return await ExecuteWithOperationScopeAsync("GetProductById", async () =>
         {
             _logger.LogInformation("Fetching product with ID: {ProductId}", id);
 
-            // Try to get from cache
-            var cachedProduct = await _cache.GetAsync<ProductResponseDto>(cacheKey);
-            if (cachedProduct != null)
-            {
-                _logger.LogInformation("Product {ProductId} retrieved from cache (Cache Hit)", id);
-                return cachedProduct;
-            }
+            var result = await ExecuteWithCacheAsync(
+                cacheKey,
+                TimeSpan.FromMinutes(30),
+                async () =>
+                {
+                    var product = await _repository.GetByIdAsync(id);
 
-            var product = await _repository.GetByIdAsync(id);
+                    if (product == null)
+                    {
+                        _logger.LogWarning("Product with ID {ProductId} not found", id);
+                        throw new ProductNotFoundException(id);
+                    }
 
-            if (product == null)
-            {
-                _logger.LogWarning("Product with ID {ProductId} not found", id);
-                throw new ProductNotFoundException(id);
-            }
+                    var response = ToResponse(product);
+                    _logger.LogInformation("Successfully retrieved product {ProductId}: {ProductName}", id, product.Name);
+                    return response;
+                },
+                $"Product {id} retrieved from cache");
 
-            var response = ToResponse(product);
-
-            _logger.LogInformation("Successfully retrieved product {ProductId}: {ProductName}", id, product.Name);
-
-            // Cache the result with TTL
-            var ttl = TimeSpan.FromMinutes(30);
-            await _cache.SetAsync(cacheKey, response, ttl);
-
-            return response;
-        }
+            return result;
+        }, new Dictionary<string, object>
+        {
+            ["ProductId"] = id,
+            ["CacheKey"] = cacheKey
+        });
     }
 
     public async Task<ProductComparisonDto> CompareAsync(string productIds)
     {
         var cacheKey = $"products:comparison:{productIds.Replace(",", ":")}";
 
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["Operation"] = "CompareProducts",
-            ["CacheKey"] = cacheKey
-        }))
+        return await ExecuteWithOperationScopeAsync("CompareProducts", async () =>
         {
             if (string.IsNullOrWhiteSpace(productIds))
             {
@@ -136,70 +123,65 @@ public class ProductService : IProductService
                 throw new ProductValidationException("No product IDs provided");
             }
 
-            // Try to get from cache
-            var cachedComparison = await _cache.GetAsync<ProductComparisonDto>(cacheKey);
-            if (cachedComparison != null)
-            {
-                _logger.LogInformation("Product comparison for IDs {ProductIds} retrieved from cache (Cache Hit)", productIds);
-                return cachedComparison;
-            }
-
-            var ids = productIds.Split(',')
-                .Select(id => int.TryParse(id, out var parsed) ? parsed : throw new ProductValidationException($"Invalid product ID: {id}"))
-                .ToList();
-
-            if (!ids.Any())
-            {
-                _logger.LogWarning("Product comparison attempted with no valid IDs after parsing");
-                throw new ProductValidationException("No product IDs provided");
-            }
-
-            _logger.LogInformation("Comparing {ProductCount} products with IDs: {ProductIds}", ids.Count, string.Join(", ", ids));
-
-            var products = new List<Product>();
-            foreach (var id in ids)
-            {
-                var product = await _repository.GetByIdAsync(id);
-                if (product == null)
+            var result = await ExecuteWithCacheAsync(
+                cacheKey,
+                TimeSpan.FromMinutes(20),
+                async () =>
                 {
-                    _logger.LogWarning("Product with ID {ProductId} not found during comparison", id);
-                    throw new ProductNotFoundException(id);
-                }
-                products.Add(product);
-            }
+                    var ids = productIds.Split(',')
+                        .Select(id => int.TryParse(id, out var parsed) ? parsed : throw new ProductValidationException($"Invalid product ID: {id}"))
+                        .ToList();
 
-            var maxPrice = products.Max(p => p.Price.Value);
-            var minPrice = products.Min(p => p.Price.Value);
-            var avgPrice = products.Average(p => p.Price.Value);
+                    if (!ids.Any())
+                    {
+                        _logger.LogWarning("Product comparison attempted with no valid IDs after parsing");
+                        throw new ProductValidationException("No product IDs provided");
+                    }
 
-            _logger.LogInformation(
-                "Comparison completed: MaxPrice={MaxPrice}, MinPrice={MinPrice}, AvgPrice={AvgPrice}, PriceDifference={PriceDifference}",
-                maxPrice, minPrice, avgPrice, maxPrice - minPrice);
+                    _logger.LogInformation("Comparing {ProductCount} products with IDs: {ProductIds}", ids.Count, string.Join(", ", ids));
 
-            var result = new ProductComparisonDto
-            {
-                Products = products.Select(ToResponse).ToList(),
-                Differences = new List<string>
-                {
-                    $"Price difference: {maxPrice - minPrice:C2}",
-                    $"Average price: {avgPrice:C2}"
-                }
-            };
+                    var products = new List<Product>();
+                    foreach (var id in ids)
+                    {
+                        var product = await _repository.GetByIdAsync(id);
+                        if (product == null)
+                        {
+                            _logger.LogWarning("Product with ID {ProductId} not found during comparison", id);
+                            throw new ProductNotFoundException(id);
+                        }
+                        products.Add(product);
+                    }
 
-            // Cache the result with TTL
-            var ttl = TimeSpan.FromMinutes(20);
-            await _cache.SetAsync(cacheKey, result, ttl);
+                    var maxPrice = products.Max(p => p.Price.Value);
+                    var minPrice = products.Min(p => p.Price.Value);
+                    var avgPrice = products.Average(p => p.Price.Value);
+
+                    _logger.LogInformation(
+                        "Comparison completed: MaxPrice={MaxPrice}, MinPrice={MinPrice}, AvgPrice={AvgPrice}, PriceDifference={PriceDifference}",
+                        maxPrice, minPrice, avgPrice, maxPrice - minPrice);
+
+                    return new ProductComparisonDto
+                    {
+                        Products = products.Select(ToResponse).ToList(),
+                        Differences = new List<string>
+                        {
+                            $"Price difference: {maxPrice - minPrice:C2}",
+                            $"Average price: {avgPrice:C2}"
+                        }
+                    };
+                },
+                $"Product comparison for IDs {productIds} retrieved from cache");
 
             return result;
-        }
+        }, new Dictionary<string, object>
+        {
+            ["CacheKey"] = cacheKey
+        });
     }
 
     public async Task<ProductResponseDto> CreateAsync(CreateProductDto createDto)
     {
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["Operation"] = "CreateProduct"
-        }))
+        return await ExecuteWithOperationScopeAsync("CreateProduct", async () =>
         {
             _logger.LogInformation("Creating new product: {ProductName} with price {Price}", createDto.Name, createDto.Price);
 
@@ -213,22 +195,104 @@ public class ProductService : IProductService
             await InvalidateListCacheAsync();
 
             return ToResponse(created);
+        });
+    }
+
+    /// <summary>
+    /// Executes an operation with caching support. Checks cache first, and if not found,
+    /// executes the fetch operation and caches the result.
+    /// </summary>
+    private async Task<T> ExecuteWithCacheAsync<T>(
+        string cacheKey,
+        TimeSpan ttl,
+        Func<Task<T>> fetchOperation,
+        string? cacheHitMessage = null) where T : class
+    {
+        // Try to get from cache
+        var cachedResult = await _cache.GetAsync<T>(cacheKey);
+        if (cachedResult != null)
+        {
+            if (!string.IsNullOrEmpty(cacheHitMessage))
+            {
+                _logger.LogInformation("{Message} (Cache Hit)", cacheHitMessage);
+            }
+            return cachedResult;
+        }
+
+        // Fetch from source
+        var result = await fetchOperation();
+
+        // Cache the result
+        await _cache.SetAsync(cacheKey, result, ttl);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Executes an operation within a logging scope with structured metadata.
+    /// </summary>
+    private async Task<T> ExecuteWithOperationScopeAsync<T>(
+        string operation,
+        Func<Task<T>> action,
+        Dictionary<string, object>? additionalScope = null)
+    {
+        var scope = new Dictionary<string, object>
+        {
+            ["Operation"] = operation
+        };
+
+        if (additionalScope != null)
+        {
+            foreach (var kvp in additionalScope)
+            {
+                scope[kvp.Key] = kvp.Value;
+            }
+        }
+
+        using (_logger.BeginScope(scope))
+        {
+            return await action();
         }
     }
 
+    /// <summary>
+    /// Executes a void operation within a logging scope with structured metadata.
+    /// </summary>
+    private async Task ExecuteWithOperationScopeAsync(
+        string operation,
+        Func<Task> action,
+        Dictionary<string, object>? additionalScope = null)
+    {
+        await ExecuteWithOperationScopeAsync(operation, async () =>
+        {
+            await action();
+            return Task.CompletedTask;
+        }, additionalScope);
+    }
+
+    /// <summary>
+    /// Invalidates all product list caches.
+    /// </summary>
     private async Task InvalidateListCacheAsync()
     {
         await _cache.RemoveByPatternAsync("products:list:*");
         _logger.LogDebug("Invalidated all list cache entries");
     }
 
+    /// <summary>
+    /// Invalidates cache for a specific product and all list caches.
+    /// </summary>
+    private async Task InvalidateProductCacheAsync(int productId)
+    {
+        var cacheKey = $"products:details:{productId}";
+        await _cache.RemoveAsync(cacheKey);
+        _logger.LogDebug("Invalidated cache for product {ProductId}", productId);
+        await InvalidateListCacheAsync();
+    }
+
     public async Task<ProductResponseDto> UpdateAsync(int id, UpdateProductDto updateDto)
     {
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["Operation"] = "UpdateProduct",
-            ["ProductId"] = id
-        }))
+        return await ExecuteWithOperationScopeAsync("UpdateProduct", async () =>
         {
             _logger.LogInformation("Updating product with ID {ProductId}", id);
 
@@ -262,24 +326,18 @@ public class ProductService : IProductService
 
             _logger.LogInformation("Product {ProductId} updated successfully", id);
 
-            // Invalidate specific product cache and all list cache
-            var cacheKey = $"products:details:{id}";
-            await _cache.RemoveAsync(cacheKey);
-            _logger.LogDebug("Invalidated cache for product {ProductId}", id);
-
-            await InvalidateListCacheAsync();
+            await InvalidateProductCacheAsync(id);
 
             return ToResponse(product);
-        }
+        }, new Dictionary<string, object>
+        {
+            ["ProductId"] = id
+        });
     }
 
     public async Task DeleteAsync(int id)
     {
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["Operation"] = "DeleteProduct",
-            ["ProductId"] = id
-        }))
+        await ExecuteWithOperationScopeAsync("DeleteProduct", async () =>
         {
             _logger.LogInformation("Attempting to delete product with ID {ProductId}", id);
 
@@ -294,15 +352,13 @@ public class ProductService : IProductService
 
             await _repository.DeleteAsync(id);
 
-            // Invalidate specific product cache and all list cache
-            var cacheKey = $"products:details:{id}";
-            await _cache.RemoveAsync(cacheKey);
-            _logger.LogDebug("Invalidated cache for deleted product {ProductId}", id);
-
-            await InvalidateListCacheAsync();
+            await InvalidateProductCacheAsync(id);
 
             _logger.LogInformation("Product {ProductId} ({ProductName}) deleted successfully", id, existing.Name);
-        }
+        }, new Dictionary<string, object>
+        {
+            ["ProductId"] = id
+        });
     }
 
     private static ProductResponseDto ToResponse(Product product) => new()

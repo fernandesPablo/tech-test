@@ -56,19 +56,121 @@ public class ProductRepository : IProductRepository
         }
     }
 
+    /// <summary>
+    /// Opens the CSV file for reading with shared lock (allows concurrent reads and writes).
+    /// </summary>
+    private FileStream OpenFileForReading()
+    {
+        EnsureFileExists();
+        return new FileStream(
+            _csvFilePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite);
+    }
+
+    /// <summary>
+    /// Opens the CSV file for writing with exclusive lock (no other process can read or write).
+    /// </summary>
+    private FileStream OpenFileForWriting()
+    {
+        EnsureFileExists();
+        return new FileStream(
+            _csvFilePath,
+            FileMode.Open,
+            FileAccess.ReadWrite,
+            FileShare.None);
+    }
+
+    /// <summary>
+    /// Executes an operation with automatic retry logic for handling file lock contention.
+    /// </summary>
+    private async Task<T> ExecuteWithRetry<T>(
+        Func<Task<T>> operation,
+        string operationName,
+        bool shouldRetryOnConcurrencyException = true)
+    {
+        const int maxRetries = 5;
+        var retryCount = 0;
+
+        while (retryCount < maxRetries)
+        {
+            try
+            {
+                return await operation();
+            }
+            catch (ConcurrencyException) when (!shouldRetryOnConcurrencyException)
+            {
+                // Don't retry on concurrency conflicts if specified
+                throw;
+            }
+            catch (IOException) when (retryCount < maxRetries - 1)
+            {
+                retryCount++;
+                _logger.LogDebug("File locked during {Operation}, retrying... ({Attempt}/{Max})",
+                    operationName, retryCount, maxRetries);
+                await Task.Delay(50 * retryCount); // Exponential backoff
+            }
+        }
+
+        throw new IOException($"Failed to {operationName} after {maxRetries} retries due to file lock contention");
+    }
+
+    /// <summary>
+    /// Executes a void operation with automatic retry logic for handling file lock contention.
+    /// </summary>
+    private async Task ExecuteWithRetry(
+        Func<Task> operation,
+        string operationName,
+        bool shouldRetryOnConcurrencyException = true)
+    {
+        await ExecuteWithRetry(async () =>
+        {
+            await operation();
+            return Task.CompletedTask;
+        }, operationName, shouldRetryOnConcurrencyException);
+    }
+
+    /// <summary>
+    /// Reads all lines from the CSV file including the header.
+    /// </summary>
+    private async Task<(string header, List<string> dataLines)> ReadAllLinesAsync(FileStream fileStream)
+    {
+        using var reader = new StreamReader(fileStream, leaveOpen: true);
+
+        var header = await reader.ReadLineAsync();
+        var dataLines = new List<string>();
+
+        string? line;
+        while ((line = await reader.ReadLineAsync()) != null)
+        {
+            dataLines.Add(line);
+        }
+
+        return (header!, dataLines);
+    }
+
+    /// <summary>
+    /// Writes all lines back to the CSV file, clearing existing content first.
+    /// </summary>
+    private async Task WriteAllLinesAsync(FileStream fileStream, IEnumerable<string> lines)
+    {
+        fileStream.SetLength(0); // Clear file
+        fileStream.Seek(0, SeekOrigin.Begin);
+
+        using var writer = new StreamWriter(fileStream, leaveOpen: true);
+        foreach (var line in lines)
+        {
+            await writer.WriteLineAsync(line);
+        }
+        await writer.FlushAsync();
+    }
+
     public async Task<Product?> GetByIdAsync(int id)
     {
         try
         {
-            EnsureFileExists(); // Ensure file exists before every operation
-
-            // Read with shared lock (multiple readers and writers allowed for concurrent access)
-            using var fileStream = new FileStream(
-                _csvFilePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite);
-
+            using var fileStream = OpenFileForReading();
             using var reader = new StreamReader(fileStream);
 
             await reader.ReadLineAsync(); // Skip header
@@ -100,15 +202,7 @@ public class ProductRepository : IProductRepository
 
     public async Task<IEnumerable<Product>> GetAllAsync()
     {
-        EnsureFileExists(); // Ensure file exists before every operation
-
-        // Read with shared lock (multiple readers and writers allowed for concurrent access)
-        using var fileStream = new FileStream(
-            _csvFilePath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.ReadWrite);
-
+        using var fileStream = OpenFileForReading();
         using var reader = new StreamReader(fileStream);
 
         var products = new List<Product>();
@@ -129,239 +223,142 @@ public class ProductRepository : IProductRepository
 
     public async Task<Product> CreateAsync(Product product)
     {
-        const int maxRetries = 5;
-        var retryCount = 0;
-
-        while (retryCount < maxRetries)
+        return await ExecuteWithRetry(async () =>
         {
-            try
+            using var fileStream = OpenFileForWriting();
+            using var reader = new StreamReader(fileStream, leaveOpen: true);
+
+            // Read all lines to find max ID
+            await reader.ReadLineAsync(); // Skip header
+            var maxId = 0;
+
+            string? line;
+            while ((line = await reader.ReadLineAsync()) != null)
             {
-                EnsureFileExists(); // Ensure file exists before every operation
-
-                // Exclusive lock: no other process can read or write
-                using var fileStream = new FileStream(
-                    _csvFilePath,
-                    FileMode.Open,
-                    FileAccess.ReadWrite,
-                    FileShare.None);
-
-                using var reader = new StreamReader(fileStream, leaveOpen: true);
-
-                // Read all lines to find max ID
-                await reader.ReadLineAsync(); // Skip header
-                var maxId = 0;
-
-                string? line;
-                while ((line = await reader.ReadLineAsync()) != null)
+                var existingProduct = ParseLine(line);
+                if (existingProduct != null && existingProduct.Id > maxId)
                 {
-                    var existingProduct = ParseLine(line);
-                    if (existingProduct != null && existingProduct.Id > maxId)
-                    {
-                        maxId = existingProduct.Id;
-                    }
+                    maxId = existingProduct.Id;
                 }
-
-                var nextId = maxId + 1;
-
-                var newProduct = new Product(
-                    nextId,
-                    product.Name,
-                    product.Description,
-                    product.ImageUrl,
-                    product.Price,
-                    product.Rating,
-                    product.Specifications,
-                    version: 0
-                );
-
-                var newLine = FormatLine(newProduct);
-
-                // Append to file
-                using var writer = new StreamWriter(fileStream, leaveOpen: true);
-                fileStream.Seek(0, SeekOrigin.End);
-                await writer.WriteLineAsync(newLine);
-                await writer.FlushAsync();
-
-                _logger.LogDebug("Product persisted to CSV with ID {ProductId}", nextId);
-
-                return newProduct;
             }
-            catch (IOException) when (retryCount < maxRetries - 1)
-            {
-                retryCount++;
-                _logger.LogDebug("File locked during create, retrying... ({Attempt}/{Max})", retryCount, maxRetries);
-                await Task.Delay(50 * retryCount); // Exponential backoff
-            }
-        }
 
-        throw new IOException($"Failed to create product after {maxRetries} retries due to file lock contention");
+            var nextId = maxId + 1;
+
+            var newProduct = new Product(
+                nextId,
+                product.Name,
+                product.Description,
+                product.ImageUrl,
+                product.Price,
+                product.Rating,
+                product.Specifications,
+                version: 0
+            );
+
+            var newLine = FormatLine(newProduct);
+
+            // Append to file
+            using var writer = new StreamWriter(fileStream, leaveOpen: true);
+            fileStream.Seek(0, SeekOrigin.End);
+            await writer.WriteLineAsync(newLine);
+            await writer.FlushAsync();
+
+            _logger.LogDebug("Product persisted to CSV with ID {ProductId}", nextId);
+
+            return newProduct;
+        }, "create product");
     }
 
     public async Task UpdateAsync(Product product)
     {
-        const int maxRetries = 5;
-        var retryCount = 0;
-
-        while (retryCount < maxRetries)
+        await ExecuteWithRetry(async () =>
         {
-            try
+            using var fileStream = OpenFileForWriting();
+
+            // Read all lines
+            var (header, dataLines) = await ReadAllLinesAsync(fileStream);
+
+            var found = false;
+            var currentVersion = 0;
+
+            foreach (var line in dataLines)
             {
-                EnsureFileExists(); // Ensure file exists before every operation
-
-                // Exclusive lock: no other process can read or write
-                using var fileStream = new FileStream(
-                    _csvFilePath,
-                    FileMode.Open,
-                    FileAccess.ReadWrite,
-                    FileShare.None);
-
-                using var reader = new StreamReader(fileStream, leaveOpen: true);
-
-                // Read all lines
-                var lines = new List<string>();
-                var header = await reader.ReadLineAsync();
-                lines.Add(header!);
-
-                var found = false;
-                var currentVersion = 0;
-
-                string? line;
-                while ((line = await reader.ReadLineAsync()) != null)
+                var existingProduct = ParseLine(line);
+                if (existingProduct?.Id == product.Id)
                 {
-                    var existingProduct = ParseLine(line);
-                    if (existingProduct?.Id == product.Id)
-                    {
-                        found = true;
-                        currentVersion = existingProduct.Version;
-                    }
-                    lines.Add(line);
+                    found = true;
+                    currentVersion = existingProduct.Version;
+                    break;
                 }
-
-                if (!found)
-                {
-                    throw new ProductNotFoundException(product.Id);
-                }
-
-                // Check for version conflict (optimistic concurrency check)
-                if (product.Version != currentVersion)
-                {
-                    throw new ConcurrencyException(
-                        $"Product {product.Id} was modified by another process. " +
-                        $"Expected version {product.Version}, but current version is {currentVersion}.");
-                }
-
-                // Increment version
-                product.IncrementVersion();
-
-                // Update the product in memory
-                var updatedLines = new List<string> { header! };
-                foreach (var l in lines.Skip(1))
-                {
-                    var existingProduct = ParseLine(l);
-                    if (existingProduct?.Id == product.Id)
-                    {
-                        updatedLines.Add(FormatLine(product));
-                    }
-                    else
-                    {
-                        updatedLines.Add(l);
-                    }
-                }
-
-                // Write back to file
-                fileStream.SetLength(0); // Clear file
-                fileStream.Seek(0, SeekOrigin.Begin);
-
-                using var writer = new StreamWriter(fileStream, leaveOpen: true);
-                foreach (var l in updatedLines)
-                {
-                    await writer.WriteLineAsync(l);
-                }
-                await writer.FlushAsync();
-
-                _logger.LogDebug("Product {ProductId} updated to version {Version}", product.Id, product.Version);
-                return;
             }
-            catch (ConcurrencyException)
+
+            if (!found)
             {
-                // Don't retry on concurrency conflicts, let it bubble up
-                throw;
+                throw new ProductNotFoundException(product.Id);
             }
-            catch (IOException) when (retryCount < maxRetries - 1)
-            {
-                retryCount++;
-                _logger.LogDebug("File locked during update, retrying... ({Attempt}/{Max})", retryCount, maxRetries);
-                await Task.Delay(50 * retryCount); // Exponential backoff
-            }
-        }
 
-        throw new IOException($"Failed to update product after {maxRetries} retries due to file lock contention");
+            // Check for version conflict (optimistic concurrency check)
+            if (product.Version != currentVersion)
+            {
+                throw new ConcurrencyException(
+                    $"Product {product.Id} was modified by another process. " +
+                    $"Expected version {product.Version}, but current version is {currentVersion}.");
+            }
+
+            // Increment version
+            product.IncrementVersion();
+
+            // Update the product in memory
+            var updatedLines = new List<string> { header };
+            foreach (var line in dataLines)
+            {
+                var existingProduct = ParseLine(line);
+                if (existingProduct?.Id == product.Id)
+                {
+                    updatedLines.Add(FormatLine(product));
+                }
+                else
+                {
+                    updatedLines.Add(line);
+                }
+            }
+
+            // Write back to file
+            await WriteAllLinesAsync(fileStream, updatedLines);
+
+            _logger.LogDebug("Product {ProductId} updated to version {Version}", product.Id, product.Version);
+        }, "update product", shouldRetryOnConcurrencyException: false);
     }
 
     public async Task DeleteAsync(int id)
     {
-        const int maxRetries = 5;
-        var retryCount = 0;
-
-        while (retryCount < maxRetries)
+        await ExecuteWithRetry(async () =>
         {
-            try
+            using var fileStream = OpenFileForWriting();
+
+            // Read all lines
+            var (header, dataLines) = await ReadAllLinesAsync(fileStream);
+
+            var initialCount = dataLines.Count;
+            var linesToKeep = new List<string> { header };
+
+            foreach (var line in dataLines)
             {
-                EnsureFileExists(); // Ensure file exists before every operation
-
-                // Exclusive lock: no other process can read or write
-                using var fileStream = new FileStream(
-                    _csvFilePath,
-                    FileMode.Open,
-                    FileAccess.ReadWrite,
-                    FileShare.None);
-
-                using var reader = new StreamReader(fileStream, leaveOpen: true);
-
-                // Read all lines
-                var lines = new List<string>();
-                var header = await reader.ReadLineAsync();
-                lines.Add(header!);
-
-                var initialCount = 0;
-                string? line;
-                while ((line = await reader.ReadLineAsync()) != null)
+                var existingProduct = ParseLine(line);
+                if (existingProduct?.Id != id)
                 {
-                    var existingProduct = ParseLine(line);
-                    if (existingProduct?.Id != id)
-                    {
-                        lines.Add(line);
-                    }
-                    initialCount++;
+                    linesToKeep.Add(line);
                 }
-
-                // Write back to file
-                fileStream.SetLength(0); // Clear file
-                fileStream.Seek(0, SeekOrigin.Begin);
-
-                using var writer = new StreamWriter(fileStream, leaveOpen: true);
-                foreach (var l in lines)
-                {
-                    await writer.WriteLineAsync(l);
-                }
-                await writer.FlushAsync();
-
-                if (lines.Count - 1 < initialCount)
-                {
-                    _logger.LogDebug("Deleted product {ProductId} from CSV", id);
-                }
-
-                return;
             }
-            catch (IOException) when (retryCount < maxRetries - 1)
+
+            // Write back to file
+            await WriteAllLinesAsync(fileStream, linesToKeep);
+
+            if (linesToKeep.Count - 1 < initialCount)
             {
-                retryCount++;
-                _logger.LogDebug("File locked during delete, retrying... ({Attempt}/{Max})", retryCount, maxRetries);
-                await Task.Delay(50 * retryCount); // Exponential backoff
+                _logger.LogDebug("Deleted product {ProductId} from CSV", id);
             }
-        }
-
-        throw new IOException($"Failed to delete product after {maxRetries} retries due to file lock contention");
+        }, "delete product");
     }
 
     private Product? ParseLine(string line)

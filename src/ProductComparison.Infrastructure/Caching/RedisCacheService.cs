@@ -36,32 +36,65 @@ public class RedisCacheService : ICacheService
         _instancePrefix = redisOptions?.Value.InstanceName ?? "ProdComparison:";
     }
 
-    public async Task<T?> GetAsync<T>(string key)
+    /// <summary>
+    /// Executes a cache operation with automatic exception handling and logging.
+    /// </summary>
+    private async Task<T> ExecuteSafelyAsync<T>(
+        Func<Task<T>> operation,
+        string operationName,
+        string key,
+        T defaultValue = default!)
     {
         try
+        {
+            return await operation();
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to serialize/deserialize for {Operation} with key: {CacheKey}", operationName, key);
+            return defaultValue;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during {Operation} for key: {CacheKey}", operationName, key);
+            return defaultValue;
+        }
+    }
+
+    /// <summary>
+    /// Executes a void cache operation with automatic exception handling and logging.
+    /// </summary>
+    private async Task ExecuteSafelyAsync(
+        Func<Task> operation,
+        string operationName,
+        string key)
+    {
+        try
+        {
+            await operation();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during {Operation} for key: {CacheKey}", operationName, key);
+        }
+    }
+
+    public async Task<T?> GetAsync<T>(string key)
+    {
+        return await ExecuteSafelyAsync(async () =>
         {
             var cachedValue = await _distributedCache.GetStringAsync(key);
 
             if (string.IsNullOrEmpty(cachedValue))
             {
                 _logger.LogDebug("Cache miss for key: {CacheKey}", key);
-                return default;
+                return default(T);
             }
 
             var result = JsonSerializer.Deserialize<T>(cachedValue, _jsonOptions);
             _logger.LogDebug("Cache hit for key: {CacheKey}", key);
             return result;
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogWarning(ex, "Failed to deserialize cached value for key: {CacheKey}", key);
-            return default;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving cache for key: {CacheKey}", key);
-            return default;
-        }
+        }, "GetAsync", key, default(T)!);
     }
 
     public async Task SetAsync<T>(string key, T value, TimeSpan? expiration = null)
@@ -74,7 +107,7 @@ public class RedisCacheService : ICacheService
             return;
         }
 
-        try
+        await ExecuteSafelyAsync(async () =>
         {
             var jsonValue = JsonSerializer.Serialize(value, _jsonOptions);
 
@@ -96,44 +129,27 @@ public class RedisCacheService : ICacheService
             _logger.LogDebug("Cached value for key: {CacheKey} with expiration: {Expiration}",
                 key,
                 expiration?.ToString() ?? $"Sliding: {DefaultSlidingExpiration}, Absolute: {DefaultAbsoluteExpiration}");
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogWarning(ex, "Failed to serialize value for cache key: {CacheKey}", key);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error setting cache for key: {CacheKey}", key);
-        }
+        }, "SetAsync", key);
     }
 
     public async Task RemoveAsync(string key)
     {
-        try
+        await ExecuteSafelyAsync(async () =>
         {
             await _distributedCache.RemoveAsync(key);
             _logger.LogDebug("Removed cache for key: {CacheKey}", key);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error removing cache for key: {CacheKey}", key);
-        }
+        }, "RemoveAsync", key);
     }
 
     public async Task<bool> ExistsAsync(string key)
     {
-        try
+        return await ExecuteSafelyAsync(async () =>
         {
             var cachedValue = await _distributedCache.GetAsync(key);
             var exists = cachedValue != null;
             _logger.LogDebug("Cache existence check for key {CacheKey}: {Exists}", key, exists);
             return exists;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error checking cache existence for key: {CacheKey}", key);
-            return false;
-        }
+        }, "ExistsAsync", key, false);
     }
 
     public async Task RemoveByPatternAsync(string pattern)
@@ -144,7 +160,7 @@ public class RedisCacheService : ICacheService
             return;
         }
 
-        try
+        await ExecuteSafelyAsync(async () =>
         {
             var fullPattern = $"{_instancePrefix}{pattern}";
             var server = _redisConnection.GetServer(_redisConnection.GetEndPoints()[0]);
@@ -161,10 +177,6 @@ public class RedisCacheService : ICacheService
                 await database.KeyDeleteAsync(keysToDelete.ToArray());
                 _logger.LogInformation("Invalidated {Count} cache keys matching pattern: {Pattern}", keysToDelete.Count, fullPattern);
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error removing cache by pattern: {Pattern}", pattern);
-        }
+        }, "RemoveByPatternAsync", pattern);
     }
 }

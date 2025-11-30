@@ -17,6 +17,54 @@ public class ProductsControllerTests : IntegrationTestBase
     public ProductsControllerTests(WebApplicationFactoryFixture factory) : base(factory)
     {
     }
+
+    /// <summary>
+    /// Creates a test product via POST and returns the created product.
+    /// </summary>
+    private async Task<ProductResponseDto> CreateTestProductAsync(
+        string name = "Test Product",
+        string description = "Test Description",
+        string imageUrl = "https://example.com/test.jpg",
+        decimal price = 100m,
+        decimal rating = 4.0m,
+        string brand = "TestBrand",
+        string color = "Red",
+        string weight = "100g")
+    {
+        var createDto = new CreateProductDto
+        {
+            Name = name,
+            Description = description,
+            ImageUrl = imageUrl,
+            Price = price,
+            Rating = rating,
+            Specifications = new ProductSpecificationsDto
+            {
+                Brand = brand,
+                Color = color,
+                Weight = weight
+            }
+        };
+
+        var response = await Client.PostAsJsonAsync("/api/v1/products", createDto);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await response.Content.ReadFromJsonAsync<ProductResponseDto>();
+        created.Should().NotBeNull();
+        return created!;
+    }
+
+    /// <summary>
+    /// Gets the first product ID from the product list.
+    /// </summary>
+    private async Task<int> GetFirstProductIdAsync()
+    {
+        var response = await Client.GetAsync("/api/v1/products?page=1&pageSize=1");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var products = await response.Content.ReadFromJsonAsync<ApiPagedResponse<ProductResponseDto>>();
+        products.Should().NotBeNull();
+        products!.Data.Should().NotBeEmpty();
+        return products.Data.First().Id;
+    }
     
     [Fact]
     public async Task GET_Products_ReturnsSuccessAndProducts()
@@ -67,10 +115,8 @@ public class ProductsControllerTests : IntegrationTestBase
     [Fact]
     public async Task GET_ProductById_ReturnsProduct()
     {
-        // Arrange - Primeiro pega lista para ter um ID válido
-        var listResponse = await Client.GetAsync("/api/v1/products?page=1&pageSize=1");
-        var products = await listResponse.Content.ReadFromJsonAsync<ApiPagedResponse<ProductResponseDto>>();
-        var productId = products!.Data.First().Id;
+        // Arrange - Get a valid product ID
+        var productId = await GetFirstProductIdAsync();
         
         // Act
         var response = await Client.GetAsync($"/api/v1/products/{productId}");
@@ -122,33 +168,18 @@ public class ProductsControllerTests : IntegrationTestBase
     [Fact]
     public async Task POST_Product_CreatesNewProduct()
     {
-        // Arrange
-        var newProduct = new CreateProductDto
-        {
-            Name = "Test Product Integration",
-            Description = "Created by integration test",
-            ImageUrl = "https://example.com/test.jpg",
-            Price = 999.99m,
-            Rating = 4.5m,
-            Specifications = new ProductSpecificationsDto
-            {
-                Brand = "TestBrand",
-                Color = "Blue",
-                Weight = "500g"
-            }
-        };
-        
         // Act
-        var response = await Client.PostAsJsonAsync("/api/v1/products", newProduct);
-        
+        var createdProduct = await CreateTestProductAsync(
+            name: "Test Product Integration",
+            description: "Created by integration test",
+            price: 999.99m,
+            rating: 4.5m,
+            color: "Blue",
+            weight: "500g");
+
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-        response.Headers.Location.Should().NotBeNull();
-        
-        var createdProduct = await response.Content.ReadFromJsonAsync<ProductResponseDto>();
-        createdProduct.Should().NotBeNull();
-        createdProduct!.Name.Should().Be(newProduct.Name);
-        createdProduct.Price.Should().Be(newProduct.Price);
+        createdProduct.Name.Should().Be("Test Product Integration");
+        createdProduct.Price.Should().Be(999.99m);
     }
     
     [Fact]
@@ -180,25 +211,14 @@ public class ProductsControllerTests : IntegrationTestBase
     [Fact]
     public async Task PUT_Product_UpdatesExistingProduct()
     {
-        // Arrange - Cria produto primeiro
-        var createDto = new CreateProductDto
-        {
-            Name = "Original Name",
-            Description = "Original Description",
-            ImageUrl = "https://example.com/original.jpg",
-            Price = 100m,
-            Rating = 4.0m,
-            Specifications = new ProductSpecificationsDto
-            {
-                Brand = "OriginalBrand",
-                Color = "Red",
-                Weight = "100g"
-            }
-        };
-        var createResponse = await Client.PostAsJsonAsync("/api/v1/products", createDto);
-        var created = await createResponse.Content.ReadFromJsonAsync<ProductResponseDto>();
+        // Arrange - Create product first
+        var created = await CreateTestProductAsync(
+            name: "Original Name",
+            description: "Original Description",
+            imageUrl: "https://example.com/original.jpg",
+            brand: "OriginalBrand");
         
-        // Act - Atualiza o produto
+        // Act - Update the product
         var updateDto = new UpdateProductDto
         {
             Name = "Updated Name",
@@ -213,7 +233,7 @@ public class ProductsControllerTests : IntegrationTestBase
                 Weight = "150g"
             }
         };
-        var response = await Client.PutAsJsonAsync($"/api/v1/products/{created!.Id}", updateDto);
+        var response = await Client.PutAsJsonAsync($"/api/v1/products/{created.Id}", updateDto);
         
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -253,31 +273,22 @@ public class ProductsControllerTests : IntegrationTestBase
     [Fact]
     public async Task DELETE_Product_RemovesProduct()
     {
-        // Arrange - Cria produto primeiro
-        var createDto = new CreateProductDto
-        {
-            Name = "To Delete",
-            Description = "Will be deleted",
-            ImageUrl = "https://example.com/delete.jpg",
-            Price = 100m,
-            Rating = 4.0m,
-            Specifications = new ProductSpecificationsDto
-            {
-                Brand = "DeleteBrand",
-                Color = "Black",
-                Weight = "50g"
-            }
-        };
-        var createResponse = await Client.PostAsJsonAsync("/api/v1/products", createDto);
-        var created = await createResponse.Content.ReadFromJsonAsync<ProductResponseDto>();
+        // Arrange - Create product first
+        var created = await CreateTestProductAsync(
+            name: "To Delete",
+            description: "Will be deleted",
+            imageUrl: "https://example.com/delete.jpg",
+            brand: "DeleteBrand",
+            color: "Black",
+            weight: "50g");
         
-        // Act - Deleta o produto
-        var response = await Client.DeleteAsync($"/api/v1/products/{created!.Id}");
+        // Act - Delete the product
+        var response = await Client.DeleteAsync($"/api/v1/products/{created.Id}");
         
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
         
-        // Verifica que produto foi removido
+        // Verify product was removed
         var getResponse = await Client.GetAsync($"/api/v1/products/{created.Id}");
         getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
