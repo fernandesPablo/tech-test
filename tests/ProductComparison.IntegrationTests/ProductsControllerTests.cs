@@ -302,12 +302,12 @@ public class ProductsControllerTests : IntegrationTestBase
     }
     
     [Fact]
-    public async Task DELETE_Product_WithInvalidId_ReturnsNotFound()
+    public async Task DELETE_Product_WithInvalidId_ReturnsNoContent()
     {
-        // Act
+        // Act - DELETE is idempotent (RFC 9110), should return 204 for non-existent product
         var response = await Client.DeleteAsync($"/api/v1/products/{Guid.NewGuid()}");
         
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 }

@@ -342,8 +342,10 @@ public class ProductService : IProductService
             var existing = await _repository.GetByIdAsync(id);
             if (existing == null)
             {
-                _logger.LogWarning("Cannot delete - Product with ID {ProductId} not found", id);
-                throw new ProductNotFoundException(id);
+                _logger.LogWarning("Delete requested for non-existent product {ProductId} - completing successfully for idempotence", id);
+                // Don't throw - make DELETE truly idempotent (RFC 9110)
+                // Return 204 No Content whether product existed or not
+                return;
             }
 
             _logger.LogInformation("Product found: {ProductName}. Proceeding with deletion", existing.Name);

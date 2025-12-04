@@ -417,23 +417,20 @@ public class ProductServiceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_ShouldThrowProductNotFoundException_WhenProductDoesNotExist()
+    public async Task DeleteAsync_ShouldCompleteSuccessfully_WhenProductDoesNotExist()
     {
-        // Arrange
+        // Arrange - Idempotent DELETE should not throw on non-existent product (RFC 9110)
         var productId = Guid.NewGuid();
 
         _mockRepository.Setup(repo => repo.GetByIdAsync(productId))
             .ReturnsAsync((Product?)null);
 
-        // Act & Assert
-        var exception = await Assert.ThrowsAsync<ProductNotFoundException>(
-            () => _productService.DeleteAsync(productId)
-        );
+        // Act - Should complete without throwing
+        await _productService.DeleteAsync(productId);
 
-        Assert.NotNull(exception);
-        Assert.Contains($"Product with ID {productId}", exception.Message);
-        Assert.Equal(404, exception.StatusCode);
+        // Assert
         _mockRepository.Verify(repo => repo.GetByIdAsync(productId), Times.Once);
         _mockRepository.Verify(repo => repo.DeleteAsync(It.IsAny<Guid>()), Times.Never);
+        // No exception thrown - DELETE is idempotent
     }
 }

@@ -349,10 +349,12 @@ public class ProductRepository : IProductRepository
                 }
             }
 
-            // Throw if product not found (makes DELETE idempotent)
+            // Don't throw if product not found - makes DELETE truly idempotent (RFC 9110)
+            // Return success (204) whether product existed or not
             if (linesToKeep.Count - 1 == initialCount)
             {
-                throw new ProductNotFoundException(id);
+                _logger.LogDebug("Delete requested for non-existent product {ProductId} - completing successfully for idempotence", id);
+                return;  // Return without modifying file - idempotent success
             }
 
             // Write back to file
