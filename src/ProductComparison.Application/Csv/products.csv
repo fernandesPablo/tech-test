@@ -1,21 +1,21 @@
 Id,Name,Description,ImageUrl,Price,Rating,Brand,Color,Weight,Version
-1,Smartphone Galaxy X13,Premium smartphone with 6.5 inch AMOLED display and 128GB storage,https://example.com/images/galaxy-x12.jpg,899.99,4.5,Samsung,Midnight Black,185g,2
-2,Wireless Gaming Mouse,Ergonomic wireless mouse with RGB lighting and 16000 DPI sensor,https://example.com/images/gaming-mouse.jpg,79.99,4.7,Logitech,Black,95g,1
-3,Bluetooth Headphones Pro,Noise-cancelling over-ear headphones with 30-hour battery life,https://example.com/images/headphones-pro.jpg,249.99,4.8,Sony,Silver,250g,2
-4,4K Smart TV 55 inch,Ultra HD Smart TV with HDR support and built-in streaming apps,https://example.com/images/smart-tv-55.jpg,699.99,4.6,LG,Black,18.5kg,1
-5,Mechanical Keyboard RGB,Full-size mechanical keyboard with Cherry MX switches and RGB backlighting,https://example.com/images/mech-keyboard.jpg,149.99,4.4,Corsair,Black,1200g,1
-6,Fitness Tracker Band,Water-resistant fitness tracker with heart rate monitor and GPS,https://example.com/images/fitness-tracker.jpg,129.99,4.3,Fitbit,Blue,28g,3
-7,Portable SSD 1TB,High-speed external SSD with USB-C 3.2 Gen 2 interface,https://example.com/images/portable-ssd.jpg,159.99,4.9,Samsung,Gray,50g,1
-8,Wireless Charger Pad,Fast wireless charging pad compatible with Qi-enabled devices,https://example.com/images/wireless-charger.jpg,34.99,4.2,Anker,White,80g,2
-9,Laptop Backpack Pro,Water-resistant laptop backpack with multiple compartments and USB port,https://example.com/images/laptop-backpack.jpg,59.99,4.5,SwissGear,Black,850g,1
-10,USB-C Hub 7-in-1,Multi-port USB-C hub with HDMI 4K SD card reader and USB 3.0 ports,https://example.com/images/usb-hub.jpg,44.99,4.6,Anker,Space Gray,95g,1
-11,Gaming Console NextGen,Latest generation gaming console with 1TB storage and 4K gaming,https://example.com/images/gaming-console.jpg,499.99,4.8,Sony,White,4.5kg,2
-12,Smart Watch Series 7,Advanced smartwatch with health monitoring and cellular connectivity,https://example.com/images/smartwatch-7.jpg,399.99,4.7,Apple,Starlight,42g,1
-13,Webcam HD Pro,Full HD 1080p webcam with auto-focus and built-in microphone,https://example.com/images/webcam-hd.jpg,89.99,4.4,Logitech,Black,165g,1
-14,Tablet 10.5 inch,Lightweight tablet with stylus support and 64GB storage,https://example.com/images/tablet-10.jpg,329.99,4.5,Samsung,Silver,465g,1
-15,Bluetooth Speaker Portable,Waterproof portable speaker with 360-degree sound and 12-hour battery,https://example.com/images/bt-speaker.jpg,119.99,4.6,JBL,Red,540g,2
-16,Gaming Chair Ergonomic,Ergonomic gaming chair with lumbar support and adjustable armrests,https://example.com/images/gaming-chair.jpg,299.99,4.3,Secretlab,Black/Red,25kg,1
-17,Wireless Earbuds Pro,True wireless earbuds with active noise cancellation and wireless charging,https://example.com/images/earbuds-pro.jpg,179.99,4.7,Apple,White,11g,3
-18,Monitor 27 inch QHD,27-inch QHD monitor with 144Hz refresh rate and HDR support,https://example.com/images/monitor-27.jpg,449.99,4.8,Dell,Black,6.2kg,1
-19,Router WiFi 6 Mesh,Tri-band mesh WiFi 6 router with coverage up to 6000 sq ft,https://example.com/images/wifi-router.jpg,349.99,4.5,TP-Link,White,850g,1
-20,Action Camera 4K,Compact waterproof action camera with 4K video and image stabilization,https://example.com/images/action-cam.jpg,279.99,4.6,GoPro,Black,126g,2
+a1b2c3d4-e5f6-7890-1234-567890abcdef,Smartphone Galaxy X13,Premium smartphone with 6.5 inch AMOLED display and 128GB storage,https://example.com/images/galaxy-x12.jpg,899.99,4.5,Samsung,Midnight Black,185g,2
+b2c3d4e5-f6a7-8901-2345-67890abcdef0,Wireless Gaming Mouse,Ergonomic wireless mouse with RGB lighting and 16000 DPI sensor,https://example.com/images/gaming-mouse.jpg,79.99,4.7,Logitech,Black,95g,1
+c3d4e5f6-a7b8-9012-3456-7890abcdef01,Bluetooth Headphones Pro,Noise-cancelling over-ear headphones with 30-hour battery life,https://example.com/images/headphones-pro.jpg,249.99,4.8,Sony,Silver,250g,2
+d4e5f6a7-b8c9-0123-4567-890abcdef012,4K Smart TV 55 inch,Ultra HD Smart TV with HDR support and built-in streaming apps,https://example.com/images/smart-tv-55.jpg,699.99,4.6,LG,Black,18.5kg,1
+e5f6a7b8-c9d0-1234-5678-90abcdef0123,Mechanical Keyboard RGB,Full-size mechanical keyboard with Cherry MX switches and RGB backlighting,https://example.com/images/mech-keyboard.jpg,149.99,4.4,Corsair,Black,1200g,1
+f6a7b8c9-d0e1-2345-6789-0abcdef01234,Fitness Tracker Band,Water-resistant fitness tracker with heart rate monitor and GPS,https://example.com/images/fitness-tracker.jpg,129.99,4.3,Fitbit,Blue,28g,3
+a7b8c9d0-e1f2-3456-789a-bcdef0123456,Portable SSD 1TB,High-speed external SSD with USB-C 3.2 Gen 2 interface,https://example.com/images/portable-ssd.jpg,159.99,4.9,Samsung,Gray,50g,1
+b8c9d0e1-f2a3-4567-89ab-cdef01234567,Wireless Charger Pad,Fast wireless charging pad compatible with Qi-enabled devices,https://example.com/images/wireless-charger.jpg,34.99,4.2,Anker,White,80g,2
+c9d0e1f2-a3b4-5678-9abc-def012345678,Laptop Backpack Pro,Water-resistant laptop backpack with multiple compartments and USB port,https://example.com/images/laptop-backpack.jpg,59.99,4.5,SwissGear,Black,850g,1
+d0e1f2a3-b4c5-6789-abcd-ef0123456789,USB-C Hub 7-in-1,Multi-port USB-C hub with HDMI 4K SD card reader and USB 3.0 ports,https://example.com/images/usb-hub.jpg,44.99,4.6,Anker,Space Gray,95g,1
+e1f2a3b4-c5d6-789a-bcde-f01234567890,Gaming Console NextGen,Latest generation gaming console with 1TB storage and 4K gaming,https://example.com/images/gaming-console.jpg,499.99,4.8,Sony,White,4.5kg,2
+f2a3b4c5-d6e7-89ab-cdef-012345678901,Smart Watch Series 7,Advanced smartwatch with health monitoring and cellular connectivity,https://example.com/images/smartwatch-7.jpg,399.99,4.7,Apple,Starlight,42g,1
+a3b4c5d6-e7f8-9abc-def0-123456789012,Webcam HD Pro,Full HD 1080p webcam with auto-focus and built-in microphone,https://example.com/images/webcam-hd.jpg,89.99,4.4,Logitech,Black,165g,1
+b4c5d6e7-f8a9-abcd-ef01-234567890123,Tablet 10.5 inch,Lightweight tablet with stylus support and 64GB storage,https://example.com/images/tablet-10.jpg,329.99,4.5,Samsung,Silver,465g,1
+c5d6e7f8-a9b0-bcde-f012-345678901234,Bluetooth Speaker Portable,Waterproof portable speaker with 360-degree sound and 12-hour battery,https://example.com/images/bt-speaker.jpg,119.99,4.6,JBL,Red,540g,2
+d6e7f8a9-b0c1-cdef-0123-456789012345,Gaming Chair Ergonomic,Ergonomic gaming chair with lumbar support and adjustable armrests,https://example.com/images/gaming-chair.jpg,299.99,4.3,Secretlab,Black/Red,25kg,1
+e7f8a9b0-c1d2-def0-1234-567890123456,Wireless Earbuds Pro,True wireless earbuds with active noise cancellation and wireless charging,https://example.com/images/earbuds-pro.jpg,179.99,4.7,Apple,White,11g,3
+f8a9b0c1-d2e3-ef01-2345-678901234567,Monitor 27 inch QHD,27-inch QHD monitor with 144Hz refresh rate and HDR support,https://example.com/images/monitor-27.jpg,449.99,4.8,Dell,Black,6.2kg,1
+a9b0c1d2-e3f4-0123-4567-89012345678a,Router WiFi 6 Mesh,Tri-band mesh WiFi 6 router with coverage up to 6000 sq ft,https://example.com/images/wifi-router.jpg,349.99,4.5,TP-Link,White,850g,1
+b0c1d2e3-f4a5-1234-5678-9012345678ab,Action Camera 4K,Compact waterproof action camera with 4K video and image stabilization,https://example.com/images/action-cam.jpg,279.99,4.6,GoPro,Black,126g,2

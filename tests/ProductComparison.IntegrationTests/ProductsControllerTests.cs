@@ -22,6 +22,7 @@ public class ProductsControllerTests : IntegrationTestBase
     /// Creates a test product via POST and returns the created product.
     /// </summary>
     private async Task<ProductResponseDto> CreateTestProductAsync(
+        Guid? id = null,
         string name = "Test Product",
         string description = "Test Description",
         string imageUrl = "https://example.com/test.jpg",
@@ -33,6 +34,7 @@ public class ProductsControllerTests : IntegrationTestBase
     {
         var createDto = new CreateProductDto
         {
+            Id = id ?? Guid.NewGuid(),
             Name = name,
             Description = description,
             ImageUrl = imageUrl,
@@ -56,7 +58,7 @@ public class ProductsControllerTests : IntegrationTestBase
     /// <summary>
     /// Gets the first product ID from the product list.
     /// </summary>
-    private async Task<int> GetFirstProductIdAsync()
+    private async Task<Guid> GetFirstProductIdAsync()
     {
         var response = await Client.GetAsync("/api/v1/products?page=1&pageSize=1");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -90,7 +92,7 @@ public class ProductsControllerTests : IntegrationTestBase
         
         // Assert - Estrutura do produto
         var firstProduct = result.Data.First();
-        firstProduct.Id.Should().BeGreaterThan(0);
+        firstProduct.Id.Should().NotBeEmpty();
         firstProduct.Name.Should().NotBeNullOrEmpty();
         firstProduct.Price.Should().BeGreaterThan(0);
     }
@@ -134,7 +136,7 @@ public class ProductsControllerTests : IntegrationTestBase
     public async Task GET_ProductById_WithInvalidId_ReturnsNotFound()
     {
         // Act
-        var response = await Client.GetAsync("/api/v1/products/99999");
+        var response = await Client.GetAsync($"/api/v1/products/{Guid.NewGuid()}");
         
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -143,8 +145,13 @@ public class ProductsControllerTests : IntegrationTestBase
     [Fact]
     public async Task GET_CompareProducts_ReturnsComparison()
     {
-        // Act - Compara os 3 primeiros produtos
-        var response = await Client.GetAsync("/api/v1/products/compare?ids=1,2,3");
+        // Arrange - Create test products to ensure we have valid GUIDs
+        var product1 = await CreateTestProductAsync(name: "Compare 1", price: 100m);
+        var product2 = await CreateTestProductAsync(name: "Compare 2", price: 200m);
+        var product3 = await CreateTestProductAsync(name: "Compare 3", price: 300m);
+        
+        // Act - Compare the 3 products
+        var response = await Client.GetAsync($"/api/v1/products/compare?ids={product1.Id},{product2.Id},{product3.Id}");
         
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -188,6 +195,7 @@ public class ProductsControllerTests : IntegrationTestBase
         // Arrange - Price negativo (inválido)
         var invalidProduct = new CreateProductDto
         {
+            Id = Guid.NewGuid(),
             Name = "Invalid",
             Description = "Invalid Description",
             ImageUrl = "https://example.com/invalid.jpg",
@@ -264,7 +272,7 @@ public class ProductsControllerTests : IntegrationTestBase
         };
         
         // Act
-        var response = await Client.PutAsJsonAsync("/api/v1/products/99999", updateDto);
+        var response = await Client.PutAsJsonAsync($"/api/v1/products/{Guid.NewGuid()}", updateDto);
         
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -297,7 +305,7 @@ public class ProductsControllerTests : IntegrationTestBase
     public async Task DELETE_Product_WithInvalidId_ReturnsNotFound()
     {
         // Act
-        var response = await Client.DeleteAsync("/api/v1/products/99999");
+        var response = await Client.DeleteAsync($"/api/v1/products/{Guid.NewGuid()}");
         
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);

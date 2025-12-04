@@ -58,6 +58,7 @@ public class CacheIntegrationTests : IntegrationTestBase
     /// </summary>
     private async Task<ProductResponseDto> CreateTestProductAsync(
         string name,
+        Guid? id = null,
         string description = "Test Description",
         decimal price = 100m,
         decimal rating = 4.0m,
@@ -67,6 +68,7 @@ public class CacheIntegrationTests : IntegrationTestBase
     {
         var createDto = new CreateProductDto
         {
+            Id = id ?? Guid.NewGuid(),
             Name = name,
             Description = description,
             ImageUrl = $"https://example.com/{name.Replace(" ", "-").ToLower()}.jpg",
@@ -90,7 +92,7 @@ public class CacheIntegrationTests : IntegrationTestBase
     /// <summary>
     /// Gets the first product ID from the product list.
     /// </summary>
-    private async Task<int> GetFirstProductIdAsync()
+    private async Task<Guid> GetFirstProductIdAsync()
     {
         var response = await Client.GetAsync("/api/v1/products?page=1&pageSize=1");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -236,7 +238,7 @@ public class CacheIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task CompareProducts_ShouldCacheResults()
     {
-        // Act & Assert
-        await AssertCachePerformanceAsync("/api/v1/products/compare?ids=1,2,3", "product comparison endpoint");
+        // Act & Assert - using the actual test GUIDs from test-products.csv
+        await AssertCachePerformanceAsync("/api/v1/products/compare?ids=11111111-1111-1111-1111-111111111111,22222222-2222-2222-2222-222222222222,33333333-3333-3333-3333-333333333333", "product comparison endpoint");
     }
 }

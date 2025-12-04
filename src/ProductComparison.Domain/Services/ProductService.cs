@@ -76,7 +76,7 @@ public class ProductService : IProductService
         });
     }
 
-    public async Task<ProductResponseDto> GetByIdAsync(int id)
+    public async Task<ProductResponseDto> GetByIdAsync(Guid id)
     {
         var cacheKey = $"products:details:{id}";
 
@@ -128,11 +128,9 @@ public class ProductService : IProductService
                 TimeSpan.FromMinutes(20),
                 async () =>
                 {
-                    var ids = productIds.Split(',')
-                        .Select(id => int.TryParse(id, out var parsed) ? parsed : throw new ProductValidationException($"Invalid product ID: {id}"))
-                        .ToList();
-
-                    if (!ids.Any())
+                var ids = productIds.Split(',')
+                    .Select(id => Guid.TryParse(id, out var parsed) ? parsed : throw new ProductValidationException($"Invalid product ID: {id}"))
+                    .ToList();                    if (!ids.Any())
                     {
                         _logger.LogWarning("Product comparison attempted with no valid IDs after parsing");
                         throw new ProductValidationException("No product IDs provided");
@@ -282,7 +280,7 @@ public class ProductService : IProductService
     /// <summary>
     /// Invalidates cache for a specific product and all list caches.
     /// </summary>
-    private async Task InvalidateProductCacheAsync(int productId)
+    private async Task InvalidateProductCacheAsync(Guid productId)
     {
         var cacheKey = $"products:details:{productId}";
         await _cache.RemoveAsync(cacheKey);
@@ -290,7 +288,7 @@ public class ProductService : IProductService
         await InvalidateListCacheAsync();
     }
 
-    public async Task<ProductResponseDto> UpdateAsync(int id, UpdateProductDto updateDto)
+    public async Task<ProductResponseDto> UpdateAsync(Guid id, UpdateProductDto updateDto)
     {
         return await ExecuteWithOperationScopeAsync("UpdateProduct", async () =>
         {
@@ -335,7 +333,7 @@ public class ProductService : IProductService
         });
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(Guid id)
     {
         await ExecuteWithOperationScopeAsync("DeleteProduct", async () =>
         {
@@ -378,7 +376,7 @@ public class ProductService : IProductService
     };
 
     private static Product ToDomain(CreateProductDto request) => new(
-        id: 0, // ID será definido pelo repositório
+        id: request.Id, // Client-provided GUID for idempotent POST
         name: request.Name,
         description: request.Description,
         imageUrl: request.ImageUrl,

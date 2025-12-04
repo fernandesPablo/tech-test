@@ -28,7 +28,7 @@ public class ProductServiceTests
     /// Creates a test product with the specified properties.
     /// </summary>
     private Product CreateTestProduct(
-        int id = 1,
+        Guid? id = null,
         string name = "Test Product",
         string description = "Test Description",
         string imageUrl = "http://example.com/test.jpg",
@@ -40,7 +40,7 @@ public class ProductServiceTests
         string weight = "1kg")
     {
         return new Product(
-            id: id,
+            id: id ?? Guid.NewGuid(),
             name: name,
             description: description,
             imageUrl: imageUrl,
@@ -54,6 +54,7 @@ public class ProductServiceTests
     /// Creates a test CreateProductDto with the specified properties.
     /// </summary>
     private CreateProductDto CreateTestCreateDto(
+        Guid? id = null,
         string name = "Test Product",
         string description = "Test Description",
         string imageUrl = "http://example.com/test.jpg",
@@ -65,6 +66,7 @@ public class ProductServiceTests
     {
         return new CreateProductDto
         {
+            Id = id ?? Guid.NewGuid(),
             Name = name,
             Description = description,
             ImageUrl = imageUrl,
@@ -111,7 +113,7 @@ public class ProductServiceTests
     /// <summary>
     /// Verifies cache invalidation for product operations.
     /// </summary>
-    private void VerifyCacheInvalidation(int productId, bool includeList = true)
+    private void VerifyCacheInvalidation(Guid productId, bool includeList = true)
     {
         _mockCache.Verify(cache => cache.RemoveAsync($"products:details:{productId}"), Times.Once);
         if (includeList)
@@ -126,8 +128,8 @@ public class ProductServiceTests
         // Arrange
         var products = new List<Product>
         {
-            CreateTestProduct(id: 1, name: "Product 1", description: "Description 1", imageUrl: "http://example.com/image1.jpg", price: 100.00m, brand: "Brand A"),
-            CreateTestProduct(id: 2, name: "Product 2", description: "Description 2", imageUrl: "http://example.com/image2.jpg", price: 200.00m, brand: "Brand B", color: "Blue", weight: "2kg")
+            CreateTestProduct(id: Guid.NewGuid(), name: "Product 1", description: "Description 1", imageUrl: "http://example.com/image1.jpg", price: 100.00m, brand: "Brand A"),
+            CreateTestProduct(id: Guid.NewGuid(), name: "Product 2", description: "Description 2", imageUrl: "http://example.com/image2.jpg", price: 200.00m, brand: "Brand B", color: "Blue", weight: "2kg")
         };
 
         _mockRepository.Setup(repo => repo.GetAllAsync())
@@ -174,7 +176,7 @@ public class ProductServiceTests
     public async Task GetByIdAsync_ShouldReturnProduct_WhenProductExists()
     {
         // Arrange
-        var productId = 1;
+        var productId = Guid.NewGuid();
         var product = CreateTestProduct(id: productId, price: 150.00m, rating: 4.5m, reviewCount: 20, color: "Green", weight: "1.5kg");
 
         _mockRepository.Setup(repo => repo.GetByIdAsync(productId))
@@ -198,7 +200,7 @@ public class ProductServiceTests
     public async Task GetByIdAsync_ShouldThrowProductNotFoundException_WhenProductDoesNotExist()
     {
         // Arrange
-        var productId = 999;
+        var productId = Guid.NewGuid();
 
         _mockRepository.Setup(repo => repo.GetByIdAsync(productId))
             .ReturnsAsync((Product?)null);
@@ -218,16 +220,16 @@ public class ProductServiceTests
     public async Task CompareAsync_ShouldReturnComparison_WhenProductsExist()
     {
         // Arrange
-        var product1 = CreateTestProduct(id: 1, name: "Product 1", description: "Description 1", imageUrl: "http://example.com/image1.jpg", price: 100.00m, brand: "Brand A");
-        var product2 = CreateTestProduct(id: 2, name: "Product 2", description: "Description 2", imageUrl: "http://example.com/image2.jpg", price: 200.00m, rating: 4.5m, reviewCount: 5, brand: "Brand B", color: "Blue", weight: "2kg");
+        var product1 = CreateTestProduct(id: Guid.NewGuid(), name: "Product 1", description: "Description 1", imageUrl: "http://example.com/image1.jpg", price: 100.00m, brand: "Brand A");
+        var product2 = CreateTestProduct(id: Guid.NewGuid(), name: "Product 2", description: "Description 2", imageUrl: "http://example.com/image2.jpg", price: 200.00m, rating: 4.5m, reviewCount: 5, brand: "Brand B", color: "Blue", weight: "2kg");
 
-        _mockRepository.Setup(repo => repo.GetByIdAsync(1))
+        _mockRepository.Setup(repo => repo.GetByIdAsync(product1.Id))
             .ReturnsAsync(product1);
-        _mockRepository.Setup(repo => repo.GetByIdAsync(2))
+        _mockRepository.Setup(repo => repo.GetByIdAsync(product2.Id))
             .ReturnsAsync(product2);
 
         // Act
-        var result = await _productService.CompareAsync("1,2");
+        var result = await _productService.CompareAsync($"{product1.Id},{product2.Id}");
 
         // Assert
         Assert.NotNull(result);
@@ -239,8 +241,8 @@ public class ProductServiceTests
         Assert.Contains(result.Differences, d => d.Contains("Price difference"));
         Assert.Contains(result.Differences, d => d.Contains("Average price"));
 
-        _mockRepository.Verify(repo => repo.GetByIdAsync(1), Times.Once);
-        _mockRepository.Verify(repo => repo.GetByIdAsync(2), Times.Once);
+        _mockRepository.Verify(repo => repo.GetByIdAsync(product1.Id), Times.Once);
+        _mockRepository.Verify(repo => repo.GetByIdAsync(product2.Id), Times.Once);
     }
 
     [Fact]
@@ -257,7 +259,7 @@ public class ProductServiceTests
         Assert.NotNull(exception);
         Assert.Contains("No product IDs provided", exception.Message);
         Assert.Equal(400, exception.StatusCode);
-        _mockRepository.Verify(repo => repo.GetByIdAsync(It.IsAny<int>()), Times.Never);
+        _mockRepository.Verify(repo => repo.GetByIdAsync(It.IsAny<Guid>()), Times.Never);
     }
 
     [Fact]
@@ -265,7 +267,7 @@ public class ProductServiceTests
     {
         // Arrange
         var createDto = CreateTestCreateDto(name: "New Product", description: "New Description", imageUrl: "http://example.com/new.jpg", price: 250.00m, rating: 4.8m, brand: "New Brand", color: "Yellow", weight: "3kg");
-        var createdProduct = CreateTestProduct(id: 10, name: createDto.Name, description: createDto.Description, imageUrl: createDto.ImageUrl, price: createDto.Price, rating: createDto.Rating, reviewCount: 1, brand: createDto.Specifications.Brand, color: createDto.Specifications.Color, weight: createDto.Specifications.Weight);
+        var createdProduct = CreateTestProduct(id: createDto.Id, name: createDto.Name, description: createDto.Description, imageUrl: createDto.ImageUrl, price: createDto.Price, rating: createDto.Rating, reviewCount: 1, brand: createDto.Specifications.Brand, color: createDto.Specifications.Color, weight: createDto.Specifications.Weight);
 
         _mockRepository.Setup(repo => repo.CreateAsync(It.IsAny<Product>()))
             .ReturnsAsync(createdProduct);
@@ -275,7 +277,7 @@ public class ProductServiceTests
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal(10, result.Id);
+        Assert.Equal(createDto.Id, result.Id);
         Assert.Equal("New Product", result.Name);
         Assert.Equal("New Description", result.Description);
         Assert.Equal(250.00m, result.Price);
@@ -322,7 +324,7 @@ public class ProductServiceTests
     public async Task UpdateAsync_ShouldUpdateProduct_WhenDataIsValid()
     {
         // Arrange
-        var productId = 5;
+        var productId = Guid.NewGuid();
         var existingProduct = CreateTestProduct(id: productId, name: "Old Product", description: "Old Description", imageUrl: "http://example.com/old.jpg", rating: 3.5m, reviewCount: 15, brand: "Old Brand", weight: "2kg");
         var updateDto = CreateTestUpdateDto(price: 150.00m, rating: 4.0m, weight: "2.5kg");
 
@@ -353,7 +355,7 @@ public class ProductServiceTests
     public async Task UpdateAsync_ShouldThrowProductNotFoundException_WhenProductDoesNotExist()
     {
         // Arrange
-        var productId = 999;
+        var productId = Guid.NewGuid();
         var updateDto = CreateTestUpdateDto();
 
         _mockRepository.Setup(repo => repo.GetByIdAsync(productId))
@@ -375,7 +377,7 @@ public class ProductServiceTests
     public async Task UpdateAsync_ShouldThrowArgumentException_WhenPriceIsNegative()
     {
         // Arrange
-        var productId = 5;
+        var productId = Guid.NewGuid();
         var existingProduct = CreateTestProduct(id: productId, name: "Existing Product", imageUrl: "http://example.com/existing.jpg", rating: 3.5m, reviewCount: 15, weight: "2kg");
         var updateDto = CreateTestUpdateDto(price: -50.00m, weight: "2kg");
 
@@ -397,7 +399,7 @@ public class ProductServiceTests
     public async Task DeleteAsync_ShouldDeleteProduct_WhenProductExists()
     {
         // Arrange
-        var productId = 7;
+        var productId = Guid.NewGuid();
         var existingProduct = CreateTestProduct(id: productId, name: "Product to Delete", imageUrl: "http://example.com/delete.jpg");
 
         _mockRepository.Setup(repo => repo.GetByIdAsync(productId))
@@ -418,7 +420,7 @@ public class ProductServiceTests
     public async Task DeleteAsync_ShouldThrowProductNotFoundException_WhenProductDoesNotExist()
     {
         // Arrange
-        var productId = 999;
+        var productId = Guid.NewGuid();
 
         _mockRepository.Setup(repo => repo.GetByIdAsync(productId))
             .ReturnsAsync((Product?)null);
@@ -432,6 +434,6 @@ public class ProductServiceTests
         Assert.Contains($"Product with ID {productId}", exception.Message);
         Assert.Equal(404, exception.StatusCode);
         _mockRepository.Verify(repo => repo.GetByIdAsync(productId), Times.Once);
-        _mockRepository.Verify(repo => repo.DeleteAsync(It.IsAny<int>()), Times.Never);
+        _mockRepository.Verify(repo => repo.DeleteAsync(It.IsAny<Guid>()), Times.Never);
     }
 }

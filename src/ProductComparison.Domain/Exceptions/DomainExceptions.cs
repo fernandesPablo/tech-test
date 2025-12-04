@@ -13,7 +13,7 @@ public abstract class DomainException : Exception
 
 public class ProductNotFoundException : DomainException
 {
-    public ProductNotFoundException(int id)
+    public ProductNotFoundException(Guid id)
         : base($"Product with ID {id} was not found.", 404)
     {
     }

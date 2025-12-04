@@ -166,7 +166,7 @@ public class ProductRepository : IProductRepository
         await writer.FlushAsync();
     }
 
-    public async Task<Product?> GetByIdAsync(int id)
+    public async Task<Product?> GetByIdAsync(Guid id)
     {
         try
         {
@@ -228,24 +228,22 @@ public class ProductRepository : IProductRepository
             using var fileStream = OpenFileForWriting();
             using var reader = new StreamReader(fileStream, leaveOpen: true);
 
-            // Read all lines to find max ID
+            // Check if product with this ID already exists (idempotence)
             await reader.ReadLineAsync(); // Skip header
-            var maxId = 0;
 
             string? line;
             while ((line = await reader.ReadLineAsync()) != null)
             {
                 var existingProduct = ParseLine(line);
-                if (existingProduct != null && existingProduct.Id > maxId)
+                if (existingProduct != null && existingProduct.Id == product.Id)
                 {
-                    maxId = existingProduct.Id;
+                    _logger.LogDebug("Product with ID {ProductId} already exists, returning existing product", product.Id);
+                    return existingProduct;
                 }
             }
 
-            var nextId = maxId + 1;
-
             var newProduct = new Product(
-                nextId,
+                product.Id,
                 product.Name,
                 product.Description,
                 product.ImageUrl,
@@ -263,7 +261,7 @@ public class ProductRepository : IProductRepository
             await writer.WriteLineAsync(newLine);
             await writer.FlushAsync();
 
-            _logger.LogDebug("Product persisted to CSV with ID {ProductId}", nextId);
+            _logger.LogDebug("Product persisted to CSV with ID {ProductId}", product.Id);
 
             return newProduct;
         }, "create product");
@@ -330,7 +328,7 @@ public class ProductRepository : IProductRepository
         }, "update product", shouldRetryOnConcurrencyException: false);
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(Guid id)
     {
         await ExecuteWithRetry(async () =>
         {
@@ -351,13 +349,16 @@ public class ProductRepository : IProductRepository
                 }
             }
 
+            // Throw if product not found (makes DELETE idempotent)
+            if (linesToKeep.Count - 1 == initialCount)
+            {
+                throw new ProductNotFoundException(id);
+            }
+
             // Write back to file
             await WriteAllLinesAsync(fileStream, linesToKeep);
 
-            if (linesToKeep.Count - 1 < initialCount)
-            {
-                _logger.LogDebug("Deleted product {ProductId} from CSV", id);
-            }
+            _logger.LogDebug("Deleted product {ProductId} from CSV", id);
         }, "delete product");
     }
 
@@ -377,7 +378,7 @@ public class ProductRepository : IProductRepository
         try
         {
             return new Product(
-                id: int.Parse(values[0]),
+                id: Guid.Parse(values[0]),
                 name: values[1],
                 description: values[2],
                 imageUrl: values[3],

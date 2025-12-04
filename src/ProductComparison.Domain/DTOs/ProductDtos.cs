@@ -4,7 +4,7 @@ namespace ProductComparison.Domain.DTOs;
 
 public record ProductResponseDto
 {
-    public int Id { get; init; }
+    public Guid Id { get; init; }
     public string Name { get; init; } = null!;
     public string Description { get; init; } = null!;
     public string ImageUrl { get; init; } = null!;
@@ -15,6 +15,9 @@ public record ProductResponseDto
 
 public record CreateProductDto
 {
+    [Required(ErrorMessage = "Id is required")]
+    public Guid Id { get; init; }
+
     [Required(ErrorMessage = "Name is required")]
     [StringLength(200, MinimumLength = 3, ErrorMessage = "Name must be between 3 and 200 characters")]
     public string Name { get; init; } = null!;

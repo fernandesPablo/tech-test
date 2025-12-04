@@ -125,16 +125,16 @@ public class ProductsController : ControllerBase
     /// <summary>
     /// Retrieves a specific product by its ID
     /// </summary>
-    /// <param name="id">The unique identifier of the product (must be greater than 0)</param>
+    /// <param name="id">The unique identifier of the product (GUID)</param>
     /// <returns>The product details</returns>
     /// <response code="200">Returns the requested product</response>
-    /// <response code="400">If the ID is invalid (less than or equal to 0)</response>
+    /// <response code="400">If the ID is invalid</response>
     /// <response code="404">If the product is not found</response>
     [HttpGet("{id}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<ProductResponseDto>> GetById([Range(1, int.MaxValue, ErrorMessage = "Id must be greater than 0")] int id)
+    public async Task<ActionResult<ProductResponseDto>> GetById(Guid id)
     {
         return await ExecuteWithLoggingAsync(
             $"GET /api/v1/products/{id}",
@@ -171,7 +171,7 @@ public class ProductsController : ControllerBase
     public async Task<ActionResult<ProductComparisonDto>> Compare(
         [FromQuery]
         [Required(ErrorMessage = "Product IDs are required")]
-        [RegularExpression(@"^\d+(,\d+)*$", ErrorMessage = "Product IDs must be comma-separated numbers")]
+        [RegularExpression(@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(,[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})*$", ErrorMessage = "Product IDs must be comma-separated GUIDs")]
         string ids)
     {
         return await ExecuteWithLoggingAsync(
@@ -237,7 +237,7 @@ public class ProductsController : ControllerBase
     /// <summary>
     /// Updates an existing product in the catalog
     /// </summary>
-    /// <param name="id">The unique identifier of the product to update</param>
+    /// <param name="id">The unique identifier of the product to update (GUID)</param>
     /// <param name="request">The updated product data</param>
     /// <returns>The updated product details</returns>
     /// <response code="200">Returns the updated product</response>
@@ -248,7 +248,7 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ProductResponseDto>> Update(
-        [Range(1, int.MaxValue, ErrorMessage = "Id must be greater than 0")] int id,
+        Guid id,
         [FromBody] UpdateProductDto request)
     {
         return await ExecuteWithLoggingAsync(
@@ -281,7 +281,7 @@ public class ProductsController : ControllerBase
     /// <summary>
     /// Deletes a product from the catalog
     /// </summary>
-    /// <param name="id">The unique identifier of the product to delete</param>
+    /// <param name="id">The unique identifier of the product to delete (GUID)</param>
     /// <returns>No content on successful deletion</returns>
     /// <response code="204">Product successfully deleted</response>
     /// <response code="400">If the ID is invalid</response>
@@ -290,7 +290,7 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult> Delete([Range(1, int.MaxValue, ErrorMessage = "Id must be greater than 0")] int id)
+    public async Task<ActionResult> Delete(Guid id)
     {
         return await ExecuteWithLoggingAsync(
             $"DELETE /api/v1/products/{id}",
