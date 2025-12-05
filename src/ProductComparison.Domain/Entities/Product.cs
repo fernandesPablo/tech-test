@@ -14,6 +14,16 @@ public class Product
     public ProductSpecifications Specifications { get; private set; }
     public int Version { get; private set; }
 
+    /// <summary>
+    /// Timestamp when the product was created (UTC)
+    /// </summary>
+    public DateTime CreatedAt { get; private set; }
+
+    /// <summary>
+    /// Timestamp when the product was last modified (UTC)
+    /// </summary>
+    public DateTime LastModifiedAt { get; private set; }
+
     public Product(
         Guid id,
         string name,
@@ -22,7 +32,9 @@ public class Product
         Price price,
         Rating rating,
         ProductSpecifications specifications,
-        int version = 0)
+        int version = 0,
+        DateTime? createdAt = null,
+        DateTime? lastModifiedAt = null)
     {
         ValidateProduct(name, description, imageUrl);
 
@@ -34,6 +46,8 @@ public class Product
         Rating = rating ?? throw new ArgumentNullException(nameof(rating));
         Specifications = specifications ?? throw new ArgumentNullException(nameof(specifications));
         Version = version;
+        CreatedAt = createdAt ?? DateTime.UtcNow;
+        LastModifiedAt = lastModifiedAt ?? DateTime.UtcNow;
     }
 
     public void Update(
@@ -52,6 +66,7 @@ public class Product
         Price = price ?? throw new ArgumentNullException(nameof(price));
         Rating = rating ?? throw new ArgumentNullException(nameof(rating));
         Specifications = specifications ?? throw new ArgumentNullException(nameof(specifications));
+        LastModifiedAt = DateTime.UtcNow;
     }
 
     public void IncrementVersion()

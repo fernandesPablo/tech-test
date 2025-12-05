@@ -11,6 +11,7 @@ public record ProductResponseDto
     public decimal Price { get; init; }
     public decimal Rating { get; init; }
     public ProductSpecificationsDto Specifications { get; init; } = null!;
+    public int Version { get; init; }
 }
 
 public record CreateProductDto
@@ -45,6 +46,10 @@ public record CreateProductDto
 
 public record UpdateProductDto
 {
+    [Required(ErrorMessage = "Version is required for optimistic concurrency control")]
+    [Range(0, int.MaxValue, ErrorMessage = "Version must be a non-negative integer")]
+    public int Version { get; init; }
+
     [Required(ErrorMessage = "Name is required")]
     [StringLength(200, MinimumLength = 3, ErrorMessage = "Name must be between 3 and 200 characters")]
     public string Name { get; init; } = null!;

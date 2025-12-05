@@ -226,9 +226,10 @@ public class ProductsControllerTests : IntegrationTestBase
             imageUrl: "https://example.com/original.jpg",
             brand: "OriginalBrand");
         
-        // Act - Update the product
+        // Act - Update the product with correct version for optimistic concurrency
         var updateDto = new UpdateProductDto
         {
+            Version = created.Version,  // Use current version for optimistic locking
             Name = "Updated Name",
             Description = "Updated Description",
             ImageUrl = "https://example.com/updated.jpg",
@@ -250,6 +251,39 @@ public class ProductsControllerTests : IntegrationTestBase
         updated.Should().NotBeNull();
         updated!.Name.Should().Be("Updated Name");
         updated.Price.Should().Be(200m);
+        updated.Version.Should().Be(created.Version + 1);  // Version should be incremented
+    }
+    
+    [Fact]
+    public async Task PUT_Product_WithWrongVersion_ReturnsConflict()
+    {
+        // Arrange - Create product first
+        var created = await CreateTestProductAsync(
+            name: "Original Name",
+            description: "Original Description",
+            imageUrl: "https://example.com/original.jpg",
+            brand: "OriginalBrand");
+        
+        // Act - Try to update with wrong version (simulating concurrent modification)
+        var updateDto = new UpdateProductDto
+        {
+            Version = 999,  // Wrong version - causes concurrency conflict
+            Name = "Updated Name",
+            Description = "Updated Description",
+            ImageUrl = "https://example.com/updated.jpg",
+            Price = 200m,
+            Rating = 4.5m,
+            Specifications = new ProductSpecificationsDto
+            {
+                Brand = "UpdatedBrand",
+                Color = "Blue",
+                Weight = "150g"
+            }
+        };
+        var response = await Client.PutAsJsonAsync($"/api/v1/products/{created.Id}", updateDto);
+        
+        // Assert - Should return 409 Conflict
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
     
     [Fact]
@@ -258,6 +292,7 @@ public class ProductsControllerTests : IntegrationTestBase
         // Arrange
         var updateDto = new UpdateProductDto
         {
+            Version = 0,  // Include version for optimistic locking
             Name = "Test Update",
             Description = "Test Description",
             ImageUrl = "https://example.com/test.jpg",

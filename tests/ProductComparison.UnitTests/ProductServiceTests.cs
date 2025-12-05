@@ -12,6 +12,7 @@ namespace ProductComparison.UnitTests;
 public class ProductServiceTests
 {
     private readonly Mock<IProductRepository> _mockRepository;
+    private readonly Mock<IProductAuditLogRepository> _mockAuditRepository;
     private readonly Mock<ILogger<ProductService>> _mockLogger;
     private readonly Mock<ICacheService> _mockCache;
     private readonly ProductService _productService;
@@ -19,9 +20,10 @@ public class ProductServiceTests
     public ProductServiceTests()
     {
         _mockRepository = new Mock<IProductRepository>();
+        _mockAuditRepository = new Mock<IProductAuditLogRepository>();
         _mockLogger = new Mock<ILogger<ProductService>>();
         _mockCache = new Mock<ICacheService>();
-        _productService = new ProductService(_mockRepository.Object, _mockLogger.Object, _mockCache.Object);
+        _productService = new ProductService(_mockRepository.Object, _mockAuditRepository.Object, _mockLogger.Object, _mockCache.Object);
     }
 
     /// <summary>
@@ -37,7 +39,8 @@ public class ProductServiceTests
         int reviewCount = 10,
         string brand = "Test Brand",
         string color = "Red",
-        string weight = "1kg")
+        string weight = "1kg",
+        int version = 0)
     {
         return new Product(
             id: id ?? Guid.NewGuid(),
@@ -46,7 +49,8 @@ public class ProductServiceTests
             imageUrl: imageUrl,
             price: new Price(price),
             rating: new Rating(rating, reviewCount),
-            specifications: new ProductSpecifications(brand, color, weight)
+            specifications: new ProductSpecifications(brand, color, weight),
+            version: version
         );
     }
 
@@ -85,6 +89,7 @@ public class ProductServiceTests
     /// Creates a test UpdateProductDto with the specified properties.
     /// </summary>
     private UpdateProductDto CreateTestUpdateDto(
+        int version = 0,
         string name = "Updated Product",
         string description = "Updated Description",
         string imageUrl = "http://example.com/updated.jpg",
@@ -96,6 +101,7 @@ public class ProductServiceTests
     {
         return new UpdateProductDto
         {
+            Version = version,
             Name = name,
             Description = description,
             ImageUrl = imageUrl,
@@ -395,6 +401,28 @@ public class ProductServiceTests
         _mockRepository.Verify(repo => repo.UpdateAsync(It.IsAny<Product>()), Times.Never);
     }
 
+    [Fact]
+    public async Task UpdateAsync_ShouldThrowConcurrencyException_WhenVersionMismatches()
+    {
+        // Arrange - Optimistic concurrency control test
+        var productId = Guid.NewGuid();
+        var existingProduct = CreateTestProduct(id: productId, name: "Current Product", description: "Current Description", imageUrl: "http://example.com/current.jpg", rating: 3.5m, reviewCount: 15, weight: "2kg", version: 5);
+        var updateDto = CreateTestUpdateDto(version: 3, price: 150.00m, weight: "2.5kg"); // Wrong version
+
+        _mockRepository.Setup(repo => repo.GetByIdAsync(productId))
+            .ReturnsAsync(existingProduct);
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<ConcurrencyException>(
+            () => _productService.UpdateAsync(productId, updateDto)
+        );
+
+        Assert.NotNull(exception);
+        Assert.Contains("version", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(409, exception.StatusCode);
+        _mockRepository.Verify(repo => repo.GetByIdAsync(productId), Times.Once);
+        _mockRepository.Verify(repo => repo.UpdateAsync(It.IsAny<Product>()), Times.Never);
+    }
     [Fact]
     public async Task DeleteAsync_ShouldDeleteProduct_WhenProductExists()
     {

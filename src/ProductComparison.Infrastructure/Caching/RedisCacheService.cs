@@ -37,13 +37,14 @@ public class RedisCacheService : ICacheService
     }
 
     /// <summary>
-    /// Executes a cache operation with automatic exception handling and logging.
+    /// Executes a cache operation with granular exception handling.
+    /// Distinguishes between cache misses, serialization errors, and infrastructure failures.
     /// </summary>
-    private async Task<T> ExecuteSafelyAsync<T>(
-        Func<Task<T>> operation,
+    private async Task<T?> ExecuteSafelyAsync<T>(
+        Func<Task<T?>> operation,
         string operationName,
-        string key,
-        T defaultValue = default!)
+        string key)
+        where T : class
     {
         try
         {
@@ -51,18 +52,57 @@ public class RedisCacheService : ICacheService
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Failed to serialize/deserialize for {Operation} with key: {CacheKey}", operationName, key);
+            // Serialization error - log as warning and return null to trigger fresh fetch
+            _logger.LogWarning(ex, "Failed to deserialize cached value for {Operation} with key: {CacheKey}. Returning null to fetch fresh data.", operationName, key);
+            return default;
+        }
+        catch (OperationCanceledException ex)
+        {
+            // Redis timeout or cancellation - log and return null to fetch fresh data
+            _logger.LogWarning(ex, "Cache operation timeout/cancelled for {Operation} with key: {CacheKey}. Returning null to fetch fresh data.", operationName, key);
+            return default;
+        }
+        catch (Exception ex)
+        {
+            // Infrastructure/connection error - log as error but still return null to allow service to continue
+            _logger.LogError(ex, "Cache infrastructure error during {Operation} for key: {CacheKey}. Cache is unavailable. Returning null to fetch fresh data.", operationName, key);
+            return default;
+        }
+    }
+
+    /// <summary>
+    /// Executes a cache operation returning a non-nullable value with graceful degradation on error.
+    /// </summary>
+    private async Task<T> ExecuteSafelyAsync<T>(
+        Func<Task<T>> operation,
+        string operationName,
+        string key,
+        T defaultValue)
+    {
+        try
+        {
+            return await operation();
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize cached value for {Operation} with key: {CacheKey}. Returning default value.", operationName, key);
+            return defaultValue;
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Cache operation timeout/cancelled for {Operation} with key: {CacheKey}. Returning default value.", operationName, key);
             return defaultValue;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during {Operation} for key: {CacheKey}", operationName, key);
+            _logger.LogError(ex, "Cache infrastructure error during {Operation} for key: {CacheKey}. Cache is unavailable. Returning default value.", operationName, key);
             return defaultValue;
         }
     }
 
     /// <summary>
-    /// Executes a void cache operation with automatic exception handling and logging.
+    /// Executes a void cache operation with granular exception handling.
+    /// Non-critical operations like Set should not crash on cache failures.
     /// </summary>
     private async Task ExecuteSafelyAsync(
         Func<Task> operation,
@@ -73,9 +113,17 @@ public class RedisCacheService : ICacheService
         {
             await operation();
         }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to serialize for {Operation} with key: {CacheKey}. Skipping cache write.", operationName, key);
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Cache operation timeout/cancelled for {Operation} with key: {CacheKey}. Skipping cache write.", operationName, key);
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during {Operation} for key: {CacheKey}", operationName, key);
+            _logger.LogError(ex, "Cache infrastructure error during {Operation} for key: {CacheKey}. Cache is unavailable. Skipping cache write.", operationName, key);
         }
     }
 
@@ -154,14 +202,14 @@ public class RedisCacheService : ICacheService
 
     public async Task RemoveByPatternAsync(string pattern)
     {
-        if (_redisConnection == null)
-        {
-            _logger.LogWarning("ConnectionMultiplexer not available for pattern removal: {Pattern}", pattern);
-            return;
-        }
-
         await ExecuteSafelyAsync(async () =>
         {
+            if (_redisConnection == null)
+            {
+                _logger.LogWarning("ConnectionMultiplexer not available for pattern removal: {Pattern}", pattern);
+                return;
+            }
+
             var fullPattern = $"{_instancePrefix}{pattern}";
             var server = _redisConnection.GetServer(_redisConnection.GetEndPoints()[0]);
             var database = _redisConnection.GetDatabase();

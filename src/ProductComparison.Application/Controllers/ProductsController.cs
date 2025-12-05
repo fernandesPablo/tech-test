@@ -194,12 +194,17 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
-    /// Creates a new product in the catalog
+    /// Creates a new product in the catalog (Idempotent Operation)
     /// </summary>
-    /// <param name="request">The product data to create</param>
-    /// <returns>The created product with its assigned ID</returns>
+    /// <param name="request">The product data to create. The Id field must be provided for idempotent requests.</param>
+    /// <returns>The created product or existing product if already created with the same ID</returns>
     /// <response code="201">Returns the newly created product</response>
     /// <response code="400">If the product data is invalid or validation fails</response>
+    /// <remarks>
+    /// This endpoint is idempotent: if you submit the same request with the same product ID multiple times,
+    /// it will return the existing product without creating duplicates.
+    /// This allows safe retries for network failures.
+    /// </remarks>
     [HttpPost]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -210,8 +215,8 @@ public class ProductsController : ControllerBase
             nameof(Create),
             async correlationId =>
             {
-                _logger.LogInformation("Received request to create product: {ProductName} with price {Price}. CorrelationId: {CorrelationId}",
-                    request.Name, request.Price, correlationId);
+                _logger.LogInformation("Received request to create product: {ProductName} with price {Price}, ID: {ProductId}. CorrelationId: {CorrelationId}",
+                    request.Name, request.Price, request.Id, correlationId);
 
                 var validationResult = ValidateModelState<ProductResponseDto>(correlationId);
                 if (validationResult != null)
@@ -219,7 +224,7 @@ public class ProductsController : ControllerBase
 
                 var response = await _productService.CreateAsync(request);
 
-                _logger.LogInformation("Product created successfully with ID {ProductId}. CorrelationId: {CorrelationId}",
+                _logger.LogInformation("Product with ID {ProductId} processed successfully. CorrelationId: {CorrelationId}",
                     response.Id, correlationId);
 
                 return CreatedAtAction(
@@ -230,7 +235,8 @@ public class ProductsController : ControllerBase
             new Dictionary<string, object>
             {
                 ["ProductName"] = request.Name,
-                ["Price"] = request.Price
+                ["Price"] = request.Price,
+                ["ProductId"] = request.Id
             });
     }
 
@@ -238,15 +244,22 @@ public class ProductsController : ControllerBase
     /// Updates an existing product in the catalog
     /// </summary>
     /// <param name="id">The unique identifier of the product to update (GUID)</param>
-    /// <param name="request">The updated product data</param>
+    /// <param name="request">The updated product data (must include current version for optimistic concurrency control)</param>
     /// <returns>The updated product details</returns>
     /// <response code="200">Returns the updated product</response>
     /// <response code="400">If the ID or product data is invalid</response>
     /// <response code="404">If the product is not found</response>
+    /// <response code="409">If a concurrency conflict occurs (version mismatch)</response>
+    /// <remarks>
+    /// The Version field in the request body is required for optimistic concurrency control.
+    /// If the product was updated by another request, a 409 Conflict will be returned with the current version.
+    /// Retry the request with the current version from the error response.
+    /// </remarks>
     [HttpPut("{id}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ProductResponseDto>> Update(
         Guid id,
         [FromBody] UpdateProductDto request)

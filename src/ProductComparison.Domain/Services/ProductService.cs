@@ -5,21 +5,27 @@ using ProductComparison.Domain.Exceptions;
 using ProductComparison.Domain.Interfaces;
 using ProductComparison.Domain.Models;
 using ProductComparison.Domain.ValueObjects;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
 namespace ProductComparison.Domain.Services;
 
 public class ProductService : IProductService
 {
     private readonly IProductRepository _repository;
+    private readonly IProductAuditLogRepository _auditRepository;
     private readonly ILogger<ProductService> _logger;
     private readonly ICacheService _cache;
 
     public ProductService(
         IProductRepository repository,
+        IProductAuditLogRepository auditRepository,
         ILogger<ProductService> logger,
         ICacheService cache)
     {
         _repository = repository;
+        _auditRepository = auditRepository;
         _logger = logger;
         _cache = cache;
     }
@@ -113,7 +119,8 @@ public class ProductService : IProductService
 
     public async Task<ProductComparisonDto> CompareAsync(string productIds)
     {
-        var cacheKey = $"products:comparison:{productIds.Replace(",", ":")}";
+        // Generate a stable, collision-resistant cache key using SHA256 hash
+        var cacheKey = GenerateCacheKeyForComparison(productIds);
 
         return await ExecuteWithOperationScopeAsync("CompareProducts", async () =>
         {
@@ -128,12 +135,26 @@ public class ProductService : IProductService
                 TimeSpan.FromMinutes(20),
                 async () =>
                 {
-                var ids = productIds.Split(',')
-                    .Select(id => Guid.TryParse(id, out var parsed) ? parsed : throw new ProductValidationException($"Invalid product ID: {id}"))
-                    .ToList();                    if (!ids.Any())
+                    // Validate and parse IDs upfront to catch errors immediately
+                    var idStrings = productIds.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(id => id.Trim())
+                        .ToList();
+
+                    if (!idStrings.Any())
                     {
                         _logger.LogWarning("Product comparison attempted with no valid IDs after parsing");
                         throw new ProductValidationException("No product IDs provided");
+                    }
+
+                    var ids = new List<Guid>();
+                    foreach (var idString in idStrings)
+                    {
+                        if (!Guid.TryParse(idString, out var parsedId))
+                        {
+                            _logger.LogWarning("Invalid product ID format during comparison: {InvalidId}", idString);
+                            throw new ProductValidationException($"Invalid product ID format: {idString}");
+                        }
+                        ids.Add(parsedId);
                     }
 
                     _logger.LogInformation("Comparing {ProductCount} products with IDs: {ProductIds}", ids.Count, string.Join(", ", ids));
@@ -181,10 +202,29 @@ public class ProductService : IProductService
     {
         return await ExecuteWithOperationScopeAsync("CreateProduct", async () =>
         {
-            _logger.LogInformation("Creating new product: {ProductName} with price {Price}", createDto.Name, createDto.Price);
+            _logger.LogInformation("Creating new product: {ProductName} with price {Price}, ID: {ProductId}", createDto.Name, createDto.Price, createDto.Id);
+
+            // Check if product with this ID already exists (idempotency)
+            var existing = await _repository.GetByIdAsync(createDto.Id);
+            if (existing != null)
+            {
+                _logger.LogInformation(
+                    "Product with ID {ProductId} already exists. Returning existing product for idempotency. Name: {ProductName}",
+                    createDto.Id, existing.Name);
+                return ToResponse(existing);
+            }
 
             var product = ToDomain(createDto);
             var created = await _repository.CreateAsync(product);
+
+            // Create audit log for product creation
+            var auditLog = new ProductAuditLog(
+                created.Id,
+                AuditOperationType.Create,
+                created.Version,
+                JsonSerializer.Serialize(ToResponse(created)),
+                $"Product created: {created.Name}");
+            await _auditRepository.CreateAsync(auditLog);
 
             _logger.LogInformation(
                 "Product created successfully with ID {ProductId}: {ProductName}, Price: {Price}",
@@ -199,6 +239,7 @@ public class ProductService : IProductService
     /// <summary>
     /// Executes an operation with caching support. Checks cache first, and if not found,
     /// executes the fetch operation and caches the result.
+    /// Properly handles null validation: null results are not cached.
     /// </summary>
     private async Task<T> ExecuteWithCacheAsync<T>(
         string cacheKey,
@@ -220,10 +261,17 @@ public class ProductService : IProductService
         // Fetch from source
         var result = await fetchOperation();
 
-        // Cache the result
-        await _cache.SetAsync(cacheKey, result, ttl);
+        // Only cache non-null results to avoid caching unintended nulls
+        if (result != null)
+        {
+            await _cache.SetAsync(cacheKey, result, ttl);
+        }
+        else
+        {
+            _logger.LogDebug("Skipping cache for key {CacheKey} - result is null", cacheKey);
+        }
 
-        return result;
+        return result!; // Guaranteed non-null by fetchOperation contract or exception
     }
 
     /// <summary>
@@ -261,11 +309,23 @@ public class ProductService : IProductService
         Func<Task> action,
         Dictionary<string, object>? additionalScope = null)
     {
-        await ExecuteWithOperationScopeAsync(operation, async () =>
+        var scope = new Dictionary<string, object>
+        {
+            ["Operation"] = operation
+        };
+
+        if (additionalScope != null)
+        {
+            foreach (var kvp in additionalScope)
+            {
+                scope[kvp.Key] = kvp.Value;
+            }
+        }
+
+        using (_logger.BeginScope(scope))
         {
             await action();
-            return Task.CompletedTask;
-        }, additionalScope);
+        }
     }
 
     /// <summary>
@@ -288,11 +348,22 @@ public class ProductService : IProductService
         await InvalidateListCacheAsync();
     }
 
+    /// <summary>
+    /// Generates a stable, collision-resistant cache key for product comparison.
+    /// Uses SHA256 hash to ensure UUIDs with special characters don't create cache key collisions.
+    /// </summary>
+    private string GenerateCacheKeyForComparison(string productIds)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(productIds));
+        var hashHex = Convert.ToHexString(hash).ToLower()[..16]; // Use first 16 chars for reasonable length
+        return $"products:comparison:{hashHex}";
+    }
+
     public async Task<ProductResponseDto> UpdateAsync(Guid id, UpdateProductDto updateDto)
     {
         return await ExecuteWithOperationScopeAsync("UpdateProduct", async () =>
         {
-            _logger.LogInformation("Updating product with ID {ProductId}", id);
+            _logger.LogInformation("Updating product with ID {ProductId} (version {Version})", id, updateDto.Version);
 
             var existing = await _repository.GetByIdAsync(id);
             if (existing == null)
@@ -301,35 +372,58 @@ public class ProductService : IProductService
                 throw new ProductNotFoundException(id);
             }
 
+            // Optimistic concurrency check - client provides the version they read
+            if (existing.Version != updateDto.Version)
+            {
+                _logger.LogWarning(
+                    "Concurrency conflict updating product {ProductId}: expected version {ExpectedVersion} but current is {CurrentVersion}",
+                    id, updateDto.Version, existing.Version);
+                throw new ConcurrencyException(
+                    $"Product was modified by another request. Expected version {updateDto.Version}, but current version is {existing.Version}.");
+            }
+
             _logger.LogInformation(
                 "Product found. Updating: Name from '{OldName}' to '{NewName}', Price from {OldPrice} to {NewPrice}",
                 existing.Name, updateDto.Name, existing.Price.Value, updateDto.Price);
 
             var product = new Product(
                 id: id,
-                name: updateDto.Name ?? existing.Name,
-                description: updateDto.Description ?? existing.Description,
-                imageUrl: updateDto.ImageUrl ?? existing.ImageUrl,
+                name: updateDto.Name,
+                description: updateDto.Description,
+                imageUrl: updateDto.ImageUrl,
                 price: new Price(updateDto.Price),
-                rating: existing.Rating,
+                rating: new Rating(updateDto.Rating, existing.Rating.NumberOfRatings),
                 specifications: new ProductSpecifications(
-                    updateDto.Specifications.Brand ?? existing.Specifications.Brand,
-                    updateDto.Specifications.Color ?? existing.Specifications.Color,
-                    updateDto.Specifications.Weight ?? existing.Specifications.Weight
+                    updateDto.Specifications.Brand,
+                    updateDto.Specifications.Color,
+                    updateDto.Specifications.Weight
                 ),
-                version: existing.Version
+                version: existing.Version  // Repository will increment this
             );
 
             await _repository.UpdateAsync(product);
 
-            _logger.LogInformation("Product {ProductId} updated successfully", id);
+            // Create audit log for product update with change summary
+            var changeSummary = BuildUpdateChangeSummary(existing, product);
+            var auditLog = new ProductAuditLog(
+                id,
+                AuditOperationType.Update,
+                product.Version,
+                JsonSerializer.Serialize(ToResponse(product)),
+                changeSummary,
+                existing.Version,
+                JsonSerializer.Serialize(ToResponse(existing)));
+            await _auditRepository.CreateAsync(auditLog);
+
+            _logger.LogInformation("Product {ProductId} updated successfully to version {NewVersion}", id, product.Version);
 
             await InvalidateProductCacheAsync(id);
 
             return ToResponse(product);
         }, new Dictionary<string, object>
         {
-            ["ProductId"] = id
+            ["ProductId"] = id,
+            ["RequestVersion"] = updateDto.Version
         });
     }
 
@@ -351,6 +445,17 @@ public class ProductService : IProductService
             _logger.LogInformation("Product found: {ProductName}. Proceeding with deletion", existing.Name);
 
             await _repository.DeleteAsync(id);
+
+            // Create audit log for product deletion
+            var auditLog = new ProductAuditLog(
+                id,
+                AuditOperationType.Delete,
+                existing.Version + 1,
+                string.Empty, // No new state for deletions
+                $"Product deleted: {existing.Name} (was version {existing.Version})",
+                existing.Version,
+                JsonSerializer.Serialize(ToResponse(existing)));
+            await _auditRepository.CreateAsync(auditLog);
 
             await InvalidateProductCacheAsync(id);
 
@@ -374,7 +479,8 @@ public class ProductService : IProductService
             Brand = product.Specifications.Brand,
             Color = product.Specifications.Color,
             Weight = product.Specifications.Weight
-        }
+        },
+        Version = product.Version
     };
 
     private static Product ToDomain(CreateProductDto request) => new(
@@ -390,4 +496,41 @@ public class ProductService : IProductService
             request.Specifications.Weight
         )
     );
+
+    /// <summary>
+    /// Builds a human-readable summary of what changed during an update operation.
+    /// Useful for audit logs and debugging.
+    /// </summary>
+    private static string BuildUpdateChangeSummary(Product oldProduct, Product newProduct)
+    {
+        var changes = new List<string>();
+
+        if (oldProduct.Name != newProduct.Name)
+            changes.Add($"Name: '{oldProduct.Name}' → '{newProduct.Name}'");
+
+        if (oldProduct.Description != newProduct.Description)
+            changes.Add($"Description: '{oldProduct.Description}' → '{newProduct.Description}'");
+
+        if (oldProduct.ImageUrl != newProduct.ImageUrl)
+            changes.Add($"ImageUrl: '{oldProduct.ImageUrl}' → '{newProduct.ImageUrl}'");
+
+        if (oldProduct.Price.Value != newProduct.Price.Value)
+            changes.Add($"Price: {oldProduct.Price.Value:C} → {newProduct.Price.Value:C}");
+
+        if (oldProduct.Rating.Value != newProduct.Rating.Value)
+            changes.Add($"Rating: {oldProduct.Rating.Value} → {newProduct.Rating.Value}");
+
+        if (oldProduct.Specifications.Brand != newProduct.Specifications.Brand)
+            changes.Add($"Brand: '{oldProduct.Specifications.Brand}' → '{newProduct.Specifications.Brand}'");
+
+        if (oldProduct.Specifications.Color != newProduct.Specifications.Color)
+            changes.Add($"Color: '{oldProduct.Specifications.Color}' → '{newProduct.Specifications.Color}'");
+
+        if (oldProduct.Specifications.Weight != newProduct.Specifications.Weight)
+            changes.Add($"Weight: '{oldProduct.Specifications.Weight}' → '{newProduct.Specifications.Weight}'");
+
+        return changes.Count > 0 
+            ? $"Updated: {string.Join(", ", changes)}"
+            : "No changes detected";
+    }
 }

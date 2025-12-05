@@ -40,6 +40,7 @@ public static class NativeInjector
 
         // Register repositories and services
         services.AddScoped<IProductRepository, ProductRepository>();
+        services.AddScoped<IProductAuditLogRepository, ProductAuditLogRepository>();
         services.AddScoped<IProductService, ProductService>();
         services.AddSingleton<ICacheService, RedisCacheService>();
 
@@ -50,6 +51,9 @@ public static class NativeInjector
         services.AddHealthChecks()
             .AddCheck<CsvFileHealthCheck>(
                 name: "csv_database",
-                tags: new[] { "database", "storage" });
+                tags: new[] { "database", "storage" })
+            .AddCheck<RedisHealthCheck>(
+                name: "redis_cache",
+                tags: new[] { "cache", "memory" });
     }
 }
