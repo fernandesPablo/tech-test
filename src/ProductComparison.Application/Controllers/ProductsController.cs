@@ -196,13 +196,13 @@ public class ProductsController : ControllerBase
     /// <summary>
     /// Creates a new product in the catalog (Idempotent Operation)
     /// </summary>
-    /// <param name="request">The product data to create. The Id field must be provided for idempotent requests.</param>
-    /// <returns>The created product or existing product if already created with the same ID</returns>
+    /// <param name="request">The product data to create.</param>
+    /// <returns>The created product or existing product if already created with the same Idempotency-Key</returns>
     /// <response code="201">Returns the newly created product</response>
-    /// <response code="400">If the product data is invalid or validation fails</response>
+    /// <response code="400">If the product data is invalid, validation fails, or Idempotency-Key is missing</response>
     /// <remarks>
-    /// This endpoint is idempotent: if you submit the same request with the same product ID multiple times,
-    /// it will return the existing product without creating duplicates.
+    /// This endpoint is idempotent via the Idempotency-Key header: if you submit the same request with the same key multiple times,
+    /// it will return the cached response without creating duplicates.
     /// This allows safe retries for network failures.
     /// </remarks>
     [HttpPost]
@@ -215,14 +215,21 @@ public class ProductsController : ControllerBase
             nameof(Create),
             async correlationId =>
             {
-                _logger.LogInformation("Received request to create product: {ProductName} with price {Price}, ID: {ProductId}. CorrelationId: {CorrelationId}",
-                    request.Name, request.Price, request.Id, correlationId);
+                var idempotencyKey = HttpContext.Request.Headers["Idempotency-Key"].ToString();
+                if (string.IsNullOrWhiteSpace(idempotencyKey))
+                {
+                    _logger.LogWarning("Request missing Idempotency-Key header. CorrelationId: {CorrelationId}", correlationId);
+                    return BadRequest(new { error = "Idempotency-Key header is required" });
+                }
+
+                _logger.LogInformation("Received request to create product: {ProductName} with price {Price}. IdempotencyKey: {IdempotencyKey}. CorrelationId: {CorrelationId}",
+                    request.Name, request.Price, idempotencyKey, correlationId);
 
                 var validationResult = ValidateModelState<ProductResponseDto>(correlationId);
                 if (validationResult != null)
                     return validationResult;
 
-                var response = await _productService.CreateAsync(request);
+                var response = await _productService.CreateAsync(request, idempotencyKey);
 
                 _logger.LogInformation("Product with ID {ProductId} processed successfully. CorrelationId: {CorrelationId}",
                     response.Id, correlationId);
@@ -235,8 +242,7 @@ public class ProductsController : ControllerBase
             new Dictionary<string, object>
             {
                 ["ProductName"] = request.Name,
-                ["Price"] = request.Price,
-                ["ProductId"] = request.Id
+                ["Price"] = request.Price
             });
     }
 

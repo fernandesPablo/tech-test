@@ -166,21 +166,23 @@ public class ProductService : IProductService
         });
     }
 
-    public async Task<ProductResponseDto> CreateAsync(CreateProductDto createDto)
+    public async Task<ProductResponseDto> CreateAsync(CreateProductDto createDto, string idempotencyKey)
     {
         return await ExecuteWithOperationScopeAsync("CreateProduct", async () =>
         {
-            _logger.LogInformation("Creating new product: {ProductName} with price {Price}, ID: {ProductId}",
-                createDto.Name, createDto.Price, createDto.Id);
+            var cacheKey = $"idempotency:{idempotencyKey}";
 
-            // Check if product with this ID already exists (idempotency)
-            var existing = await _repository.GetByIdAsync(createDto.Id);
-            if (existing != null)
+            _logger.LogInformation("Creating new product: {ProductName} with price {Price}, IdempotencyKey: {IdempotencyKey}",
+                createDto.Name, createDto.Price, idempotencyKey);
+
+            // Check if this idempotency key was already processed
+            var cachedResponse = await _cache.GetAsync<ProductResponseDto>(cacheKey);
+            if (cachedResponse != null)
             {
                 _logger.LogInformation(
-                    "Product with ID {ProductId} already exists. Returning existing product for idempotency. Name: {ProductName}",
-                    createDto.Id, existing.Name);
-                return existing.ToDto();
+                    "Idempotency key {IdempotencyKey} already processed. Returning cached response for product {ProductId}",
+                    idempotencyKey, cachedResponse.Id);
+                return cachedResponse;
             }
 
             var product = createDto.ToEntity();
@@ -188,13 +190,18 @@ public class ProductService : IProductService
 
             await LogAuditAsync(created.Id, AuditOperationType.Create, newState: created);
 
+            var response = created.ToDto();
+
+            // Cache the response with 24-hour TTL for idempotency
+            await _cache.SetAsync(cacheKey, response, TimeSpan.FromHours(24));
+
             _logger.LogInformation(
                 "Product created successfully with ID {ProductId}: {ProductName}, Price: {Price}",
                 created.Id, created.Name, created.Price.Value);
 
             await InvalidateListCacheAsync();
 
-            return created.ToDto();
+            return response;
         });
     }
 

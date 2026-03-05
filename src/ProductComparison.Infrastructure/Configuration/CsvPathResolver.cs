@@ -1,6 +1,6 @@
-namespace ProductComparison.Infrastructure.Utilities;
-
 using ProductComparison.Infrastructure.Configuration;
+
+namespace ProductComparison.Infrastructure.Utilities;
 
 /// <summary>
 /// Centraliza a lógica de resolução do caminho do arquivo CSV.

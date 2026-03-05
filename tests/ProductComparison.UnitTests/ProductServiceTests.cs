@@ -279,7 +279,7 @@ public class ProductServiceTests
             .ReturnsAsync(createdProduct);
 
         // Act
-        var result = await _productService.CreateAsync(createDto);
+        var result = await _productService.CreateAsync(createDto, "test-idempotency-key");
 
         // Assert
         Assert.NotNull(result);
@@ -302,7 +302,7 @@ public class ProductServiceTests
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<ArgumentException>(
-            () => _productService.CreateAsync(createDto)
+            () => _productService.CreateAsync(createDto, "test-idempotency-key")
         );
 
         Assert.NotNull(exception);
@@ -318,7 +318,7 @@ public class ProductServiceTests
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<ArgumentException>(
-            () => _productService.CreateAsync(createDto)
+            () => _productService.CreateAsync(createDto, "test-idempotency-key")
         );
 
         Assert.NotNull(exception);

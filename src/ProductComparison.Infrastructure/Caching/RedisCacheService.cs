@@ -40,35 +40,35 @@ public class RedisCacheService : ICacheService
     /// Executes a cache operation with granular exception handling.
     /// Distinguishes between cache misses, serialization errors, and infrastructure failures.
     /// </summary>
-    private async Task<T?> ExecuteSafelyAsync<T>(
-        Func<Task<T?>> operation,
-        string operationName,
-        string key)
-        where T : class
-    {
-        try
-        {
-            return await operation();
-        }
-        catch (JsonException ex)
-        {
-            // Serialization error - log as warning and return null to trigger fresh fetch
-            _logger.LogWarning(ex, "Failed to deserialize cached value for {Operation} with key: {CacheKey}. Returning null to fetch fresh data.", operationName, key);
-            return default;
-        }
-        catch (OperationCanceledException ex)
-        {
-            // Redis timeout or cancellation - log and return null to fetch fresh data
-            _logger.LogWarning(ex, "Cache operation timeout/cancelled for {Operation} with key: {CacheKey}. Returning null to fetch fresh data.", operationName, key);
-            return default;
-        }
-        catch (Exception ex)
-        {
-            // Infrastructure/connection error - log as error but still return null to allow service to continue
-            _logger.LogError(ex, "Cache infrastructure error during {Operation} for key: {CacheKey}. Cache is unavailable. Returning null to fetch fresh data.", operationName, key);
-            return default;
-        }
-    }
+    // private async Task<T?> ExecuteSafelyAsync<T>(
+    //     Func<Task<T?>> operation,
+    //     string operationName,
+    //     string key)
+    //     where T : class
+    // {
+    //     try
+    //     {
+    //         return await operation();
+    //     }
+    //     catch (JsonException ex)
+    //     {
+    //         // Serialization error - log as warning and return null to trigger fresh fetch
+    //         _logger.LogWarning(ex, "Failed to deserialize cached value for {Operation} with key: {CacheKey}. Returning null to fetch fresh data.", operationName, key);
+    //         return default;
+    //     }
+    //     catch (OperationCanceledException ex)
+    //     {
+    //         // Redis timeout or cancellation - log and return null to fetch fresh data
+    //         _logger.LogWarning(ex, "Cache operation timeout/cancelled for {Operation} with key: {CacheKey}. Returning null to fetch fresh data.", operationName, key);
+    //         return default;
+    //     }
+    //     catch (Exception ex)
+    //     {
+    //         // Infrastructure/connection error - log as error but still return null to allow service to continue
+    //         _logger.LogError(ex, "Cache infrastructure error during {Operation} for key: {CacheKey}. Cache is unavailable. Returning null to fetch fresh data.", operationName, key);
+    //         return default;
+    //     }
+    // }
 
     /// <summary>
     /// Executes a cache operation returning a non-nullable value with graceful degradation on error.

@@ -6,6 +6,8 @@ namespace ProductComparison.Infrastructure.BackgroundServices;
 /// </summary>
 public class CsvBackupOptions
 {
+    public const string SectionName = "CsvBackup";
+
     /// <summary>
     /// Intervalo entre backups automáticos (em minutos). Padrão: 30 minutos.
     /// </summary>

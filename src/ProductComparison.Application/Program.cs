@@ -3,8 +3,10 @@ using ProductComparison.Infrastructure.IoC;
 using System.Reflection;
 using System.Threading.RateLimiting;
 using Serilog;
-using StackExchange.Redis;
 using ProductComparison.Infrastructure.BackgroundServices;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using StackExchange.Redis;
+using ProductComparison.Infrastructure.Configuration;
 
 // Configure Serilog from appsettings.json
 var configuration = new ConfigurationBuilder()
@@ -29,8 +31,10 @@ try
     builder.Host.UseSerilog();
 
     // Configure CSV Backup Service
-    builder.Services.Configure<CsvBackupOptions>(
-        builder.Configuration.GetSection("CsvBackup"));
+    builder.Services.AddOptions<CsvBackupOptions>()
+        .Bind(builder.Configuration.GetSection(CsvBackupOptions.SectionName))
+        .ValidateDataAnnotations()
+        .ValidateOnStart();
 
     builder.Services.AddHostedService<CsvBackupService>();
 
@@ -44,8 +48,8 @@ try
     // Register Redis ConnectionMultiplexer for advanced operations (pattern-based deletion)
     builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     {
-        var configuration = builder.Configuration.GetConnectionString("RedisConnection");
-        return ConnectionMultiplexer.Connect(configuration ?? "localhost:6379");
+        var redisConnectionString = builder.Configuration.GetConnectionString("RedisConnection");
+        return ConnectionMultiplexer.Connect(redisConnectionString ?? "localhost:6379");
     });
 
     builder.Services.AddStackExchangeRedisCache(options =>
@@ -88,16 +92,17 @@ try
         });
     });
 
-    // Configure Rate Limiting
-    var rateLimitConfig = builder.Configuration.GetSection("RateLimiting");
-    var permitLimit = rateLimitConfig.GetValue<int>("PermitLimit", 100);
-    var windowMinutes = rateLimitConfig.GetValue<int>("WindowMinutes", 1);
-    var queueLimit = rateLimitConfig.GetValue<int>("QueueLimit", 10);
-    var retryAfterSecondsDefault = rateLimitConfig.GetValue<int>("RetryAfterSeconds", 60);
+    builder.Services.AddOptions<RateLimitingOptions>()
+        .Bind(builder.Configuration.GetSection(RateLimitingOptions.SectionName))
+        .ValidateDataAnnotations()
+        .ValidateOnStart();
+
+    var rateLimitOptions = builder.Configuration
+        .GetSection(RateLimitingOptions.SectionName)
+        .Get<RateLimitingOptions>() ?? new RateLimitingOptions();
 
     builder.Services.AddRateLimiter(options =>
     {
-        // Global rate limit: configured requests per configured window per IP
         options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         {
             var ipAddress = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -106,19 +111,18 @@ try
                 partitionKey: ipAddress,
                 factory: _ => new FixedWindowRateLimiterOptions
                 {
-                    PermitLimit = permitLimit,
-                    Window = TimeSpan.FromMinutes(windowMinutes),
+                    PermitLimit = rateLimitOptions.PermitLimit,
+                    Window = TimeSpan.FromMinutes(rateLimitOptions.WindowMinutes),
                     QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                    QueueLimit = queueLimit
+                    QueueLimit = rateLimitOptions.QueueLimit
                 });
         });
 
-        // Reject request handler
         options.OnRejected = async (context, cancellationToken) =>
         {
             context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
 
-            var retryAfterSeconds = retryAfterSecondsDefault;
+            var retryAfterSeconds = rateLimitOptions.RetryAfterSeconds;
             if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
             {
                 retryAfterSeconds = (int)retryAfter.TotalSeconds;
@@ -194,11 +198,33 @@ try
 
     app.MapHealthChecks("/health/live");
 
-    // Log application URLs before starting
-    var urls = app.Urls.Any() ? app.Urls : new[] { "http://localhost:5000" };
-    Log.Information("🚀 Application starting on: {Urls}", string.Join(", ", urls));
-    Log.Information("📖 Swagger UI available at: {SwaggerUrl}/swagger", urls.First());
-    Log.Information("❤️ Health check available at: {HealthUrl}/health", urls.First());
+    var lifetime = app.Lifetime;
+
+    lifetime.ApplicationStarted.Register(() =>
+    {
+        var addresses = app.Services
+            .GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>()
+            .Features
+            .Get<IServerAddressesFeature>()?
+            .Addresses;
+
+        if (addresses is { Count: > 0 })
+        {
+            Log.Information("🚀 Application started and listening on:");
+
+            foreach (var address in addresses)
+            {
+                Log.Information("   → {Address}", address);
+                Log.Information("     📖 Swagger: {SwaggerUrl}/swagger", address);
+                Log.Information("     ❤️ Health: {HealthUrl}/health/live", address);
+            }
+        }
+        else
+        {
+            Log.Warning("⚠️ Application started but no listening addresses were detected.");
+        }
+    });
+
 
     app.Run();
 }
@@ -211,5 +237,4 @@ finally
     Log.CloseAndFlush();
 }
 
-// Expõe Program class para testes de integração
 public partial class Program { }

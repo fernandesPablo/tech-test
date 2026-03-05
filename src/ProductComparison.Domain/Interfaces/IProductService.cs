@@ -8,7 +8,7 @@ namespace ProductComparison.Domain.Interfaces
         Task<PagedResult<ProductResponseDto>> GetAllAsync(int page = 1, int pageSize = 10);
         Task<ProductResponseDto> GetByIdAsync(Guid id);
         Task<ProductComparisonDto> CompareAsync(string productIds);
-        Task<ProductResponseDto> CreateAsync(CreateProductDto createDto);
+        Task<ProductResponseDto> CreateAsync(CreateProductDto createDto, string idempotencyKey);
         Task<ProductResponseDto> UpdateAsync(Guid id, UpdateProductDto updateDto);
         Task DeleteAsync(Guid id);
     }
